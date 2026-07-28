@@ -160,6 +160,48 @@ class TestPathLiterals(GraphCase):
         self.assertEqual([e for e in g['edges'] if e['dst'] == 'config.py'], [])
 
 
+class TestPythonImports(GraphCase):
+    def test_from_import_of_sibling_module(self):
+        write(self.repo, 'scripts/discover.py', 'from classify import classify\n')
+        write(self.repo, 'scripts/classify.py', 'def classify(): pass\n')
+        g = self.graph(['scripts/discover.py', 'scripts/classify.py'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'import')
+        self.assertEqual(edge['dst'], 'scripts/classify.py')
+        self.assertEqual(g['inbound']['scripts/classify.py'], ['scripts/discover.py'])
+
+    def test_plain_import_of_sibling_module(self):
+        write(self.repo, 'scripts/a.py', 'import helper\n')
+        write(self.repo, 'scripts/helper.py', 'x = 1\n')
+        g = self.graph(['scripts/a.py', 'scripts/helper.py'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'scripts/helper.py')
+
+    def test_stdlib_import_creates_no_edge(self):
+        write(self.repo, 'scripts/a.py', 'import os\nfrom pathlib import Path\n')
+        self.assertEqual(self.graph(['scripts/a.py'])['edges'], [])
+
+    def test_package_import_resolves_to_init(self):
+        write(self.repo, 'a.py', 'from pkg import thing\n')
+        write(self.repo, 'pkg/__init__.py', 'thing = 1\n')
+        g = self.graph(['a.py', 'pkg/__init__.py'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'pkg/__init__.py')
+
+    def test_import_word_in_prose_creates_no_edge(self):
+        # The precision guard: only .py files are scanned for bare imports.
+        write(self.repo, 'README.md', 'You can import config to override this.\n')
+        write(self.repo, 'config.py', 'x = 1\n')
+        g = self.graph(['README.md', 'config.py'])
+        self.assertEqual([e for e in g['edges'] if e['dst'] == 'config.py'], [])
+
+    def test_relative_import_resolves(self):
+        write(self.repo, 'pkg/a.py', 'from .b import thing\n')
+        write(self.repo, 'pkg/b.py', 'thing = 1\n')
+        g = self.graph(['pkg/a.py', 'pkg/b.py'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'pkg/b.py')
+
+
 class TestInbound(GraphCase):
     def test_inbound_lists_referencing_files(self):
         write(self.repo, 'a.md', '[x](target.md)\n')
