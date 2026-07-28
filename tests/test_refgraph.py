@@ -201,6 +201,55 @@ class TestPythonImports(GraphCase):
         self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
                          'pkg/b.py')
 
+    def test_import_inside_a_docstring_creates_no_edge(self):
+        # The precision guard: ast sees docstrings as strings, not imports.
+        write(self.repo, 'scripts/tool.py',
+              '"""\nExample:\n    from helper import run\n"""\n')
+        write(self.repo, 'scripts/helper.py', 'def run(): pass\n')
+        g = self.graph(['scripts/tool.py', 'scripts/helper.py'])
+        self.assertEqual([e for e in g['edges'] if e['kind'] == 'import'], [])
+
+    def test_import_inside_a_comment_creates_no_edge(self):
+        write(self.repo, 'scripts/tool.py', '# from helper import run\n')
+        write(self.repo, 'scripts/helper.py', 'def run(): pass\n')
+        g = self.graph(['scripts/tool.py', 'scripts/helper.py'])
+        self.assertEqual([e for e in g['edges'] if e['kind'] == 'import'], [])
+
+    def test_stdlib_name_shadowed_by_a_repo_file_creates_no_edge(self):
+        write(self.repo, 'scripts/other.py', 'import json\n')
+        write(self.repo, 'json.py', 'x = 1\n')
+        g = self.graph(['scripts/other.py', 'json.py'])
+        self.assertEqual([e for e in g['edges'] if e['dst'] == 'json.py'], [])
+
+    def test_relative_import_of_a_stdlib_name_still_resolves(self):
+        write(self.repo, 'pkg/a.py', 'from .json import thing\n')
+        write(self.repo, 'pkg/json.py', 'thing = 1\n')
+        g = self.graph(['pkg/a.py', 'pkg/json.py'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'pkg/json.py')
+
+    def test_import_nested_in_a_function_is_found(self):
+        write(self.repo, 'scripts/a.py',
+              'def go():\n    from helper import run\n    return run\n')
+        write(self.repo, 'scripts/helper.py', 'def run(): pass\n')
+        g = self.graph(['scripts/a.py', 'scripts/helper.py'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'import')
+        self.assertEqual(edge['dst'], 'scripts/helper.py')
+        self.assertEqual(edge['line'], 2)
+
+    def test_raw_is_the_module_not_the_whole_line(self):
+        write(self.repo, 'scripts/a.py', 'from helper import run  # noqa\n')
+        write(self.repo, 'scripts/helper.py', 'def run(): pass\n')
+        g = self.graph(['scripts/a.py', 'scripts/helper.py'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['raw'],
+                         'helper')
+
+    def test_unparseable_python_yields_no_import_edges(self):
+        write(self.repo, 'scripts/broken.py', 'def (((\n')
+        write(self.repo, 'scripts/helper.py', 'def run(): pass\n')
+        g = self.graph(['scripts/broken.py', 'scripts/helper.py'])
+        self.assertEqual([e for e in g['edges'] if e['kind'] == 'import'], [])
+
 
 class TestInbound(GraphCase):
     def test_inbound_lists_referencing_files(self):
