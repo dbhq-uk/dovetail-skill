@@ -285,6 +285,31 @@ class TestKindScoping(GraphCase):
         write(self.repo, 'README.md', 'Supports Python 3.11/3.12 and later.\n')
         self.assertEqual(self.graph(['README.md'])['edges'], [])
 
+    def test_markdown_link_in_python_still_yields_a_path_literal(self):
+        # A disallowed kind must not consume the target and block an allowed one.
+        write(self.repo, 'scripts/a.py', '# see [setup](docs/setup.md)\n')
+        write(self.repo, 'docs/setup.md', '# Setup\n')
+        g = self.graph(['scripts/a.py', 'docs/setup.md'])
+        kinds = [e['kind'] for e in g['edges']]
+        self.assertEqual(kinds, ['path_literal'])
+        self.assertEqual(g['edges'][0]['dst'], 'docs/setup.md')
+
+    def test_bare_markdown_link_does_not_fall_back_to_the_repo_root(self):
+        # In markdown a bare target is relative to its own file, so this is a
+        # broken link and must be reported as one, not silently redirected.
+        write(self.repo, 'docs/deep/page.md', '[back](README.md)\n')
+        write(self.repo, 'README.md', '# root\n')
+        g = self.graph(['docs/deep/page.md', 'README.md'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'md_link')
+        self.assertIsNone(edge['dst'])
+
+    def test_python_path_literal_still_uses_the_root_fallback(self):
+        write(self.repo, 'scripts/a.py', "open('data/config.json')\n")
+        write(self.repo, 'data/config.json', '{}\n')
+        g = self.graph(['scripts/a.py', 'data/config.json'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'path_literal')['dst'],
+                         'data/config.json')
+
 
 class TestInbound(GraphCase):
     def test_inbound_lists_referencing_files(self):
