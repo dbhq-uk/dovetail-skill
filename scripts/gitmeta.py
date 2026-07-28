@@ -14,6 +14,11 @@ import subprocess
 
 RECORD_SEP = '\x1e'
 
+# Failures every public function degrades on rather than propagating:
+# git missing (FileNotFoundError), repo_root not a directory
+# (NotADirectoryError), or git itself reporting an error (CalledProcessError).
+_SOFT_ERRORS = (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError)
+
 
 def _run(repo_root: str, args: list[str]) -> str:
     return subprocess.run(
@@ -26,7 +31,7 @@ def is_git_repo(repo_root: str) -> bool:
     """True when repo_root is inside a git work tree."""
     try:
         out = _run(repo_root, ['rev-parse', '--is-inside-work-tree'])
-    except (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError):
+    except _SOFT_ERRORS:
         return False
     return out.strip() == 'true'
 
@@ -43,7 +48,7 @@ def list_files(repo_root: str) -> list[str]:
         out = _run(repo_root, [
             'ls-files', '--cached', '--others', '--exclude-standard', '-z',
         ])
-    except (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError):
+    except _SOFT_ERRORS:
         return []
     return [p for p in out.split('\0') if p]
 
@@ -60,7 +65,7 @@ def last_commit_times(repo_root: str, paths: list[str]) -> dict[str, str | None]
             'log', '--diff-merges=first-parent',
             f'--format={RECORD_SEP}%cI', '--name-only', '--', *paths,
         ])
-    except subprocess.CalledProcessError:
+    except _SOFT_ERRORS:
         return times  # no commits yet, or git failed — everything stays None
 
     current: str | None = None
@@ -81,6 +86,6 @@ def changed_since(repo_root: str, ref: str) -> set[str]:
     """
     try:
         out = _run(repo_root, ['diff', '--name-only', f'{ref}...HEAD'])
-    except subprocess.CalledProcessError:
+    except _SOFT_ERRORS:
         return set()
     return {line for line in out.split('\n') if line}

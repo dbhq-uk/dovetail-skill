@@ -111,6 +111,14 @@ class TestLastCommitTimes(GitRepoCase):
     def test_empty_paths_returns_empty_dict(self):
         self.assertEqual(last_commit_times(self.repo, []), {})
 
+    def test_non_repo_directory_returns_all_none_not_raises(self):
+        plain = tempfile.mkdtemp()
+        try:
+            # This should degrade gracefully rather than raise
+            self.assertEqual(last_commit_times(plain, ['a.md']), {'a.md': None})
+        finally:
+            shutil.rmtree(plain, ignore_errors=True)
+
 
 class TestChangedSince(GitRepoCase):
     def test_lists_files_changed_since_ref(self):
@@ -125,6 +133,13 @@ class TestChangedSince(GitRepoCase):
 
     def test_unknown_ref_returns_empty_set(self):
         self.assertEqual(changed_since(self.repo, 'no-such-ref'), set())
+
+    def test_non_repo_directory_returns_empty_not_raises(self):
+        plain = tempfile.mkdtemp()
+        try:
+            self.assertEqual(changed_since(plain, 'main'), set())
+        finally:
+            shutil.rmtree(plain, ignore_errors=True)
 
 
 if __name__ == '__main__':
