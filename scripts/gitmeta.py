@@ -13,7 +13,6 @@ from __future__ import annotations
 import subprocess
 
 RECORD_SEP = '\x1e'
-MAX_BYTES = 64 * 1024 * 1024
 
 
 def _run(repo_root: str, args: list[str]) -> str:
@@ -33,10 +32,19 @@ def is_git_repo(repo_root: str) -> bool:
 
 
 def list_files(repo_root: str) -> list[str]:
-    """Tracked and untracked-but-not-ignored files, repo-relative POSIX paths."""
-    out = _run(repo_root, [
-        'ls-files', '--cached', '--others', '--exclude-standard', '-z',
-    ])
+    """Tracked and untracked-but-not-ignored files, repo-relative POSIX paths.
+
+    Degrades like `is_git_repo`: callers are expected to check `is_git_repo()`
+    first, so an empty list here means "nothing to scan" — either a genuinely
+    empty repo, or a non-repo/missing-git failure that was swallowed rather
+    than a silently-lost error.
+    """
+    try:
+        out = _run(repo_root, [
+            'ls-files', '--cached', '--others', '--exclude-standard', '-z',
+        ])
+    except (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError):
+        return []
     return [p for p in out.split('\0') if p]
 
 
@@ -66,7 +74,11 @@ def last_commit_times(repo_root: str, paths: list[str]) -> dict[str, str | None]
 
 
 def changed_since(repo_root: str, ref: str) -> set[str]:
-    """Files changed between the merge base with `ref` and the working tree."""
+    """Files changed between the merge base with `ref` and HEAD.
+
+    Uncommitted and staged changes are not reflected — only committed diffs
+    up to HEAD are considered.
+    """
     try:
         out = _run(repo_root, ['diff', '--name-only', f'{ref}...HEAD'])
     except subprocess.CalledProcessError:

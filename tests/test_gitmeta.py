@@ -69,6 +69,13 @@ class TestListFiles(GitRepoCase):
         write(self.repo, 'has space.md', 'x')
         self.assertIn('has space.md', list_files(self.repo))
 
+    def test_non_repo_directory_returns_empty_not_raises(self):
+        plain = tempfile.mkdtemp()
+        try:
+            self.assertEqual(list_files(plain), [])
+        finally:
+            shutil.rmtree(plain, ignore_errors=True)
+
 
 class TestLastCommitTimes(GitRepoCase):
     def test_returns_iso_time_for_committed_file(self):
