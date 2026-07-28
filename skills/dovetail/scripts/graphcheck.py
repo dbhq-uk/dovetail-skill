@@ -155,6 +155,10 @@ SHINGLE_JACCARD_FLOOR = 0.30
 # any useful definition. Bounding this is what keeps the promise that a scan
 # takes seconds.
 MAX_COMPARE_CHARS = 40_000
+
+# Filename-shaped tokens, for the orphan check's liveness evidence. Bounded
+# extensions so a sentence ending in a full stop does not read as a filename.
+_FILENAME_TOKEN = re.compile(r'(?<![\w/.-])([\w-]+\.[A-Za-z0-9]{1,8})(?![\w])')
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
 
@@ -184,14 +188,62 @@ def _is_entry_point(path: str) -> bool:
     return False
 
 
+def _mentioned_basenames(inventory: dict) -> frozenset[str]:
+    """Basenames named as a word anywhere in the repository's text.
+
+    Used *only* to suppress orphan findings, never to assert a reference.
+
+    The graph requires a slash to call something a path, which is right for
+    reporting a broken link - a bare word in prose is not a link target. But it
+    is wrong for orphan detection: a docs table listing `citation_manager.py`
+    by name is conclusive proof the file is known and used, and treating it as
+    an orphan is a false positive.
+
+    The prior tool does the opposite and matches basenames everywhere, which is why its
+    orphan check silently hides real orphans - `config.py` counts as referenced
+    by any document containing the word "config". Splitting the two bars gets
+    both right: a slash-bearing path is a reference, a bare basename is only
+    ever evidence of life.
+    """
+    basenames = {posixpath.basename(e['path']) for e in inventory['files']}
+    # Only basenames that look like filenames; a word like "README" without an
+    # extension would match ordinary prose.
+    candidates = {b for b in basenames if '.' in b and len(b) > 4}
+    if not candidates:
+        return frozenset()
+
+    # One tokenising pass per file, then set intersection - not a regex per
+    # candidate per file. The naive form is O(files x candidates) over full file
+    # contents, which took a 448-file repository from 4.8s to 55s.
+    root = inventory['repo_root']
+    mentioned: set[str] = set()
+    for entry in inventory['files']:
+        if entry['modality'] != 'text':
+            continue
+        try:
+            with open(os.path.join(root, entry['path']), encoding='utf-8',
+                      errors='replace') as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        own = posixpath.basename(entry['path'])
+        tokens = set(_FILENAME_TOKEN.findall(text))
+        tokens.discard(own)  # a file naming itself proves nothing
+        mentioned |= tokens & candidates
+    return frozenset(mentioned)
+
+
 def orphans(inventory: dict, graph: dict) -> list[dict]:
     """Files with no inbound references that are not legitimate entry points."""
     inbound = graph['inbound']
+    mentioned = _mentioned_basenames(inventory)
     findings = []
     for entry in inventory['files']:
         path = entry['path']
         if _is_entry_point(path) or inbound.get(path):
             continue
+        if posixpath.basename(path) in mentioned:
+            continue  # named by another file; known and used, just not linked
         findings.append(make_finding(
             source='graph',
             category='orphan',
