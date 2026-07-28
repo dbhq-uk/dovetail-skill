@@ -113,8 +113,9 @@ class TestLastCommitTimes(GitRepoCase):
 
     def test_missing_directory_returns_all_none_not_raises(self):
         # A nonexistent cwd raises FileNotFoundError, not CalledProcessError.
-        missing = os.path.join(tempfile.mkdtemp(), 'nope', 'deeper')
-        self.assertEqual(last_commit_times(missing, ['a.md']), {'a.md': None})
+        with tempfile.TemporaryDirectory() as parent:
+            missing = os.path.join(parent, 'nope', 'deeper')
+            self.assertEqual(last_commit_times(missing, ['a.md']), {'a.md': None})
 
     def test_file_as_repo_root_returns_all_none_not_raises(self):
         # A cwd that is a file raises NotADirectoryError.
@@ -141,8 +142,9 @@ class TestChangedSince(GitRepoCase):
         self.assertEqual(changed_since(self.repo, 'no-such-ref'), set())
 
     def test_missing_directory_returns_empty_not_raises(self):
-        missing = os.path.join(tempfile.mkdtemp(), 'nope', 'deeper')
-        self.assertEqual(changed_since(missing, 'main'), set())
+        with tempfile.TemporaryDirectory() as parent:
+            missing = os.path.join(parent, 'nope', 'deeper')
+            self.assertEqual(changed_since(missing, 'main'), set())
 
     def test_file_as_repo_root_returns_empty_not_raises(self):
         handle, path = tempfile.mkstemp()
