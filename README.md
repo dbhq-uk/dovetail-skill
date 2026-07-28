@@ -4,12 +4,13 @@ Checks whether a repository agrees with itself.
 
 `dovetail` builds an inventory and a typed reference graph of a repository, then
 reports findings that are certain: broken links, dangling heading anchors,
-orphaned files, duplicate and near-duplicate content, unreferenced assets, and
-translated documents that have fallen behind their base.
+orphaned files, duplicate and near-duplicate content, and translated documents
+that have fallen behind their base.
 
 Everything in this layer is deterministic. There are no model calls, no network
-access, and no third-party dependencies — only the Python 3.11+ standard library
-and `git`.
+access, and no third-party dependencies — only the Python 3.11+ standard
+library and `git`. 3.11 is the tested floor; Phase 2's config reader will need
+`tomllib`, which arrived in 3.11.
 
 ## Usage
 
@@ -39,4 +40,4 @@ The file is committed, so a decision made once applies to everyone and to CI.
 
 ## Requirements
 
-Python 3.11+, git. No credentials.
+Python 3.11+ (the tested floor; Phase 2's config reader will need `tomllib`), git. No credentials.

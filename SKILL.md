@@ -29,5 +29,6 @@ Phase 1 scope: the deterministic scan. Run it and report the findings.
 
 ## Requirements
 
-- Python 3.11 or newer (`tomllib`), and `git`.
+- Python 3.11 or newer (the tested floor; Phase 2's config reader will need
+  `tomllib`, which arrived in 3.11), and `git`.
 - No API key, no network, no third-party packages.

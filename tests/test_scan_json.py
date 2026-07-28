@@ -94,6 +94,15 @@ class TestRunScan(ScanCase):
         self.assertIn('exploding', result['failed_checks'])
         self.assertTrue(result['findings'])
 
+    def test_ignored_target_does_not_become_a_broken_link(self):
+        write(self.repo, 'generated/out.md', '# Generated\n')
+        write(self.repo, 'README.md', 'See [gen](generated/out.md)\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'gen')
+        result = run_scan(self.repo, ignore=['generated/**'])
+        broken = [f for f in result['findings'] if f['category'] == 'broken_link']
+        self.assertEqual(broken, [])
+
     def test_non_git_directory_is_rejected(self):
         plain = tempfile.mkdtemp()
         try:

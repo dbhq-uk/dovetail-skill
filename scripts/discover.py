@@ -24,7 +24,8 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
     root = os.path.abspath(repo_root)
     ignore = ignore or []
 
-    paths = [p for p in list_files(root) if not matches_any(p, ignore)]
+    all_paths = list_files(root)
+    paths = [p for p in all_paths if not matches_any(p, ignore)]
     times = last_commit_times(root, paths)
 
     files: list[dict] = []
@@ -48,4 +49,5 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
         'repo_root': root,
         'generated_at_iso': _dt.datetime.now(_dt.timezone.utc).isoformat(),
         'files': files,
+        'all_paths': sorted(all_paths),
     }

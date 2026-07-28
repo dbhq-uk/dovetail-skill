@@ -84,6 +84,11 @@ class TestDiscover(unittest.TestCase):
         self.assertNotIn('docs/en/plans/old.md', [f['path'] for f in inv['files']])
         self.assertIn('README.md', [f['path'] for f in inv['files']])
 
+    def test_all_paths_includes_ignored_files(self):
+        inv = discover(self.repo, ignore=['docs/*/plans/**'])
+        self.assertNotIn('docs/en/plans/old.md', [f['path'] for f in inv['files']])
+        self.assertIn('docs/en/plans/old.md', inv['all_paths'])
+
     def test_files_are_sorted_by_path(self):
         inv = discover(self.repo)
         paths = [f['path'] for f in inv['files']]

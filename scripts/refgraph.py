@@ -235,7 +235,13 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
 def build_graph(repo_root: str, inventory: dict) -> dict:
     """Build the reference graph for an inventory."""
     root = os.path.abspath(repo_root)
-    known = {f['path'] for f in inventory['files']}
+    # Resolution must see the whole repository even when reporting is scoped
+    # by --ignore: `inventory['files']` is filtered, but a link into an
+    # ignored path is still a real, resolvable file on disk. Falling back to
+    # the file list keeps existing callers and test fixtures (which only ever
+    # set 'files') working unchanged.
+    known = set(inventory['all_paths']) if 'all_paths' in inventory \
+        else {f['path'] for f in inventory['files']}
     text_paths = [f['path'] for f in inventory['files'] if f['modality'] in TEXT_MODALITIES]
 
     edges: list[dict] = []
