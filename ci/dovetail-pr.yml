@@ -19,6 +19,11 @@ jobs:
   coherence:
     name: repo coherence
     runs-on: ubuntu-latest
+    # github.base_ref is populated only for pull_request events. On a manual
+    # dispatch it is empty, which would make --since "origin/" unresolvable
+    # and exit 2 by design. Scope the job to pull requests; use the scheduled
+    # whole-repository job for on-demand runs.
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +44,7 @@ jobs:
 
       - name: Scan
         run: |
-          python3 .dovetail-skill/dovetail/scripts/scan.py . \
+          python .dovetail-skill/dovetail/scripts/scan.py . \
             --since "origin/${{ github.base_ref }}" \
             --format github \
             --fail-on high
