@@ -74,6 +74,17 @@ class TestOrphans(unittest.TestCase):
         found = orphans(inv([entry('src/stray.py')]), graph({'src/stray.py': []}))
         self.assertEqual(len(found), 1)
 
+    def test_a_spec_document_is_not_exempt(self):
+        # `.spec` names a test only in source files; docs/auth.spec.md is prose.
+        found = orphans(inv([entry('docs/auth.spec.md')]),
+                        graph({'docs/auth.spec.md': []}))
+        self.assertEqual(len(found), 1)
+
+    def test_a_spec_source_file_is_still_exempt(self):
+        entries = [entry('src/thing.spec.ts'), entry('src/helpers_test.go')]
+        inbound = {e['path']: [] for e in entries}
+        self.assertEqual(orphans(inv(entries), graph(inbound)), [])
+
     def test_a_specs_directory_of_documents_is_not_exempt(self):
         # `specs/` usually holds specification documents, not tests, so an
         # unreferenced one is a genuine orphan.
