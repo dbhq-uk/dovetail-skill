@@ -1,0 +1,45 @@
+# dovetail — per-pull-request coherence check.
+#
+# Copy this into .github/workflows/ in your own repository.
+#
+# This job runs only dovetail's deterministic layer: no model calls, no API
+# key, no network access, seconds to complete. Because deterministic findings
+# have no false positives, it is safe to fail a build on them.
+#
+# --since scopes findings to files the pull request actually touched, so a
+# repository with pre-existing findings can adopt this without every unrelated
+# pull request going red. Whole-repository debt belongs in a scheduled job.
+name: dovetail
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  coherence:
+    name: repo coherence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # --since resolves the base ref by looking it up in history. On a
+          # shallow clone that ref is absent, so scan.py fails loudly (exit 2)
+          # rather than silently passing. Full history avoids that failure.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check out dovetail
+        uses: actions/checkout@v4
+        with:
+          repository: grinidx/claude-skills
+          path: .dovetail-skill
+
+      - name: Scan
+        run: |
+          python3 .dovetail-skill/dovetail/scripts/scan.py . \
+            --since "origin/${{ github.base_ref }}" \
+            --format github \
+            --fail-on high
