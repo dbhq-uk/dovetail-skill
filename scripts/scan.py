@@ -22,7 +22,7 @@ import sys
 
 import graphcheck
 from discover import discover
-from gitmeta import changed_since, is_git_repo
+from gitmeta import changed_since, is_git_repo, rev_exists
 from refgraph import build_graph
 from store import load_decisions
 
@@ -50,6 +50,13 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             failed_checks.append(check.__name__)
 
     if since:
+        if not is_git_repo(root) or not rev_exists(root, since):
+            raise ValueError(
+                f'--since ref does not resolve: {since!r}. '
+                'In CI this usually means a shallow clone — fetch enough '
+                'history for the base ref, e.g. actions/checkout with '
+                'fetch-depth: 0.'
+            )
         changed = changed_since(root, since)
         findings = [
             f for f in findings

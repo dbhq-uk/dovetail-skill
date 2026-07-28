@@ -124,6 +124,22 @@ class TestSinceFiltering(ScanCase):
                  for e in f['evidence']}
         self.assertIn('README.md', files)
 
+    def test_unresolvable_since_ref_raises_rather_than_reporting_clean(self):
+        # A shallow CI clone missing the base ref must fail loudly; silently
+        # reporting zero findings would make the gate pass on a broken setup.
+        with self.assertRaises(ValueError) as caught:
+            run_scan(self.repo, since='no-such-ref')
+        self.assertIn('no-such-ref', str(caught.exception))
+
+    def test_unresolvable_since_ref_exits_two_from_the_cli(self):
+        proc = subprocess.run(
+            [sys.executable, SCRIPT, self.repo, '--format', 'json',
+             '--since', 'no-such-ref'],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn('shallow clone', proc.stderr)
+
 
 class TestCli(ScanCase):
     def test_json_format_emits_parseable_output(self):

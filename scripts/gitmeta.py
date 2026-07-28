@@ -78,6 +78,15 @@ def last_commit_times(repo_root: str, paths: list[str]) -> dict[str, str | None]
     return times
 
 
+def rev_exists(repo_root: str, ref: str) -> bool:
+    """True when `ref` resolves to a commit in this repository."""
+    try:
+        _run(repo_root, ['rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}'])
+    except _SOFT_ERRORS:
+        return False
+    return True
+
+
 def changed_since(repo_root: str, ref: str) -> set[str]:
     """Files changed between the merge base with `ref` and HEAD.
 
