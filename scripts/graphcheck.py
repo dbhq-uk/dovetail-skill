@@ -184,27 +184,33 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
             continue
 
     seen_hashes = {e['path']: e['sha256'] for e in candidates}
+
+    # `real_quick_ratio() >= threshold` is algebraically `r >= t/(2-t)` where
+    # r is the length ratio. Checking it directly costs O(1) and avoids
+    # building a matcher for hopeless pairs. Note t/(2-t), NOT t: requiring
+    # r >= t is strictly tighter than difflib's own bound and silently
+    # discards genuine near-duplicates.
+    min_length_ratio = threshold / (2 - threshold)
+
     findings = []
     paths = sorted(bodies)
+    matcher = difflib.SequenceMatcher(None)
     for i, left in enumerate(paths):
+        # set_seq2 is the cached side in difflib, so it belongs in the outer
+        # loop: the index over `left` is built once and reused for every right.
+        matcher.set_seq2(bodies[left])
         for right in paths[i + 1:]:
             if seen_hashes[left] == seen_hashes[right]:
                 continue  # exact_duplicates owns this pair
 
             a, b = bodies[left], bodies[right]
-
-            # difflib's own escalation: real_quick_ratio and quick_ratio are
-            # cheap upper bounds on ratio(), so a pair that cannot reach the
-            # threshold is rejected before the expensive comparison. Do not
-            # add a hand-rolled length gate on top — real_quick_ratio already
-            # IS the length bound, 2r/(1+r), and anything tighter discards
-            # genuine near-duplicates.
-            matcher = difflib.SequenceMatcher(None, a, b)
-            if matcher.real_quick_ratio() < threshold:
+            shorter, longer = sorted((len(a), len(b)))
+            if longer == 0 or shorter / longer < min_length_ratio:
                 continue
+
+            matcher.set_seq1(b)
             if matcher.quick_ratio() < threshold:
                 continue
-
             ratio = matcher.ratio()
             if ratio < threshold:
                 continue
