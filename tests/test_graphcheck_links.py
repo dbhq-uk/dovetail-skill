@@ -63,6 +63,31 @@ class TestBrokenLinks(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertEqual(len(found[0]['evidence']), 2)
 
+    def test_link_to_an_existing_directory_is_not_broken(self):
+        # The inventory holds files, so a directory link never resolves --
+        # but it is valid and GitHub renders it. Reporting it would fail CI
+        # on a healthy repo.
+        graph = {'edges': [edge('README.md', 3, './pkg/', None)],
+                 'inbound': {}, 'headings': {}}
+        self.assertEqual(broken_links(inv(['README.md', 'pkg/thing.py']), graph), [])
+
+    def test_link_to_a_directory_without_trailing_slash_is_not_broken(self):
+        graph = {'edges': [edge('README.md', 3, 'docs/guides', None)],
+                 'inbound': {}, 'headings': {}}
+        self.assertEqual(
+            broken_links(inv(['README.md', 'docs/guides/a.md']), graph), [])
+
+    def test_link_to_a_nonexistent_directory_is_still_broken(self):
+        graph = {'edges': [edge('README.md', 3, './nope/', None)],
+                 'inbound': {}, 'headings': {}}
+        self.assertEqual(len(broken_links(inv(['README.md']), graph)), 1)
+
+    def test_nested_directory_is_recognised(self):
+        graph = {'edges': [edge('docs/a.md', 1, '../pkg/sub/', None)],
+                 'inbound': {}, 'headings': {}}
+        self.assertEqual(
+            broken_links(inv(['docs/a.md', 'pkg/sub/deep/x.py']), graph), [])
+
 
 class TestDanglingAnchors(unittest.TestCase):
     def test_reports_missing_anchor(self):
