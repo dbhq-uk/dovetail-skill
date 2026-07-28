@@ -94,6 +94,8 @@ python3 -m pytest skills/dovetail/tests/ -v      # 243 tests, no network require
 
 ## Development
 
+Want to hack on the skill or run it from source with live edits? See [`docs/dev-setup.md`](docs/dev-setup.md).
+
 See [`docs/design-notes.md`](docs/design-notes.md) for why the tool is shaped this way, [`CONTRIBUTING.md`](CONTRIBUTING.md) to work on it, and [`AGENTS.md`](AGENTS.md) if you are an AI agent doing so - it states the three constraints that must not be broken.
 
 The skill itself is [`skills/dovetail/SKILL.md`](skills/dovetail/SKILL.md).
