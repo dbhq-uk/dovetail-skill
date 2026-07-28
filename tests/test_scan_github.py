@@ -51,9 +51,30 @@ class TestFormatGithub(unittest.TestCase):
         self.assertIn('%0A', out)
         self.assertNotIn('line one\nline two', out)
 
-    def test_commas_in_the_message_are_escaped(self):
+    def test_commas_in_the_message_are_not_escaped(self):
+        # GitHub decodes %2C only in property values, not in the message, so
+        # escaping it here would render literally in the Actions UI.
         out = format_github(result([finding(problem='a, b')]))
-        self.assertIn('%2C', out)
+        self.assertIn('a, b', out)
+        self.assertNotIn('%2C', out)
+
+    def test_commas_in_a_property_value_are_escaped(self):
+        out = format_github(result([finding(file='we,ird.md')]))
+        self.assertIn('file=we%2Cird.md', out)
+
+    def test_colons_in_a_property_value_are_escaped(self):
+        out = format_github(result([finding(category='a:b')]))
+        self.assertIn('title=a%3Ab', out)
+
+    def test_colons_in_the_message_are_not_escaped(self):
+        out = format_github(result([finding(problem='see this: thing')]))
+        self.assertIn('see this: thing', out)
+        self.assertNotIn('%3A', out)
+
+    def test_percent_is_escaped_first_in_both(self):
+        out = format_github(result([finding(problem='100%', file='a%b.md')]))
+        self.assertIn('100%25', out)
+        self.assertIn('file=a%25b.md', out)
 
     def test_no_findings_emits_no_annotations(self):
         self.assertEqual(format_github(result([])).strip(), '')
