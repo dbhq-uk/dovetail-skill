@@ -56,6 +56,12 @@ class TestGlobToRegex(unittest.TestCase):
         pat = glob_to_regex('*.py')
         self.assertFalse(pat.match('a.py\n'))
 
+    def test_double_star_matches_segments_containing_newlines(self):
+        # `.` excludes \n without re.DOTALL, and newlines are legal in POSIX
+        # filenames — which is why git ls-files uses NUL separators.
+        self.assertTrue(glob_to_regex('docs/**').match('docs/a\nb.md'))
+        self.assertTrue(glob_to_regex('**/README.md').match('x\ny/README.md'))
+
 
 class TestMatchesAny(unittest.TestCase):
     def test_empty_globs_never_match(self):

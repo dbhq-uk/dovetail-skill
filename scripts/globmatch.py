@@ -44,7 +44,9 @@ def glob_to_regex(glob: str) -> re.Pattern:
         else:
             out.append(re.escape(c))
         i += 1
-    return re.compile('^' + ''.join(out) + r'\Z')
+    # re.DOTALL makes `.` match newlines. Literal dots in globs are escaped to `\.`,
+    # so this flag only affects the `.*` we generate for `**`.
+    return re.compile('^' + ''.join(out) + r'\Z', re.DOTALL)
 
 
 def matches_any(path: str, globs: Iterable[str]) -> bool:
