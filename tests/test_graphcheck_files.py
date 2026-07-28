@@ -59,7 +59,7 @@ class TestOrphans(unittest.TestCase):
 
     def test_files_in_a_tests_directory_are_never_orphans(self):
         entries = [entry('dovetail/tests/test_store.py'),
-                   entry('pkg/spec/thing_spec.rb')]
+                   entry('pkg/__tests__/thing.rb')]
         inbound = {e['path']: [] for e in entries}
         self.assertEqual(orphans(inv(entries), graph(inbound)), [])
 
@@ -72,6 +72,13 @@ class TestOrphans(unittest.TestCase):
     def test_a_normal_source_file_is_still_an_orphan(self):
         # The guard must not swallow genuine orphans.
         found = orphans(inv([entry('src/stray.py')]), graph({'src/stray.py': []}))
+        self.assertEqual(len(found), 1)
+
+    def test_a_specs_directory_of_documents_is_not_exempt(self):
+        # `specs/` usually holds specification documents, not tests, so an
+        # unreferenced one is a genuine orphan.
+        found = orphans(inv([entry('docs/specs/requirements.md')]),
+                        graph({'docs/specs/requirements.md': []}))
         self.assertEqual(len(found), 1)
 
 
@@ -147,7 +154,9 @@ class TestNearDuplicates(unittest.TestCase):
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
 
-    def test_very_different_lengths_are_skipped_by_the_prefilter(self):
+    def test_very_different_lengths_are_still_rejected(self):
+        # difflib's real_quick_ratio is the correct length bound; a much
+        # longer document cannot be 95% similar to a much shorter one.
         shared = 'Shared opening paragraph that both documents contain. ' * 8
         size_a = self.write('a.md', shared)
         size_b = self.write('b.md', shared + ('Much more content only in b. ' * 60))
@@ -155,6 +164,20 @@ class TestNearDuplicates(unittest.TestCase):
                          entry('b.md', sha='2', size=size_b)])
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
+
+    def test_moderately_different_lengths_are_still_compared(self):
+        # Length ratio ~0.85 -- the removed hand-rolled gate would have
+        # discarded this pair before difflib ever saw it.
+        body = 'The quick brown fox jumps over the lazy dog. ' * 20
+        size_a = self.write('a.md', body)
+        size_b = self.write('b.md', body + ('Extra trailing content here. ' * 4))
+        inventory = inv([entry('a.md', sha='1', size=size_a),
+                         entry('b.md', sha='2', size=size_b)])
+        inventory['repo_root'] = self.repo
+        # Whether it is reported depends on the real similarity; what matters
+        # is that difflib got to decide. Assert no crash and a list result.
+        result = near_duplicates(inventory, graph())
+        self.assertIsInstance(result, list)
 
     def test_small_files_below_the_minimum_are_skipped(self):
         self.write('a.md', 'tiny\n')

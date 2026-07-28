@@ -91,8 +91,10 @@ ENTRY_POINT_NAMES = {
     'security', 'code_of_conduct', 'notice', 'authors', 'codeowners',
 }
 # Nothing imports a test — the runner discovers them — so a test file with no
-# inbound references is normal, not an orphan.
-TEST_DIR_NAMES = frozenset({'test', 'tests', 'spec', 'specs', '__tests__'})
+# inbound references is normal, not an orphan. This is deliberately narrow:
+# `spec/` and `specs/` commonly hold specification *documents*, not tests, so
+# they are not exempted here — only basename patterns like `.spec.ts` are.
+TEST_DIR_NAMES = frozenset({'test', 'tests', '__tests__'})
 NEAR_DUPLICATE_MIN_BYTES = 200
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
@@ -191,14 +193,12 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
 
             a, b = bodies[left], bodies[right]
 
-            # Comparing every pair with the full ratio() is O(n^2) in pairs and
-            # O(len^2) in each comparison, which would blow the seconds-long
-            # budget CI depends on. Escalate through cheap gates first: two
-            # texts cannot be `threshold` similar if their lengths are not,
-            # and difflib's own upper bounds are far cheaper than ratio().
-            shorter, longer = sorted((len(a), len(b)))
-            if longer == 0 or shorter / longer < threshold:
-                continue
+            # difflib's own escalation: real_quick_ratio and quick_ratio are
+            # cheap upper bounds on ratio(), so a pair that cannot reach the
+            # threshold is rejected before the expensive comparison. Do not
+            # add a hand-rolled length gate on top — real_quick_ratio already
+            # IS the length bound, 2r/(1+r), and anything tighter discards
+            # genuine near-duplicates.
             matcher = difflib.SequenceMatcher(None, a, b)
             if matcher.real_quick_ratio() < threshold:
                 continue
