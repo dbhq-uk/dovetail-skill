@@ -66,11 +66,27 @@ class TestPlantedDefects(unittest.TestCase):
         write(cls.repo, 'docs/near-a.md', body + 'Ending one.\n')
         write(cls.repo, 'docs/near-b.md', body + 'Ending two.\n')
 
+        # DEFECT 6: a Python module imported by another. Proves import
+        # resolution survives the whole pipeline -- pkg/core.py must NOT be
+        # an orphan, because pkg/helper.py imports it.
+        write(cls.repo, 'pkg/core.py', 'def run():\n    return 1\n')
+        write(cls.repo, 'pkg/helper.py',
+              'from core import run\n\n\ndef go():\n    return run()\n')
+
+        # DEFECT 7: a near-duplicate pair at a length ratio between the sound
+        # cutoff (0.905) and the unsound one this project once used (0.95).
+        # An unsound gate would silently drop this pair.
+        edge_body = 'This paragraph appears in both documents nearly verbatim. ' * 11
+        write(cls.repo, 'docs/edge-a.md', edge_body)
+        write(cls.repo, 'docs/edge-b.md', edge_body + ('Tail padding. ' * 4))
+
         # Link the non-orphan defect files so only docs/stray.md is an orphan.
         write(cls.repo, 'docs/index.md',
               '- [broken](broken.md)\n- [anchor](anchor.md)\n'
               '- [dup-a](dup-a.md)\n- [dup-b](dup-b.md)\n'
-              '- [near-a](near-a.md)\n- [near-b](near-b.md)\n')
+              '- [near-a](near-a.md)\n- [near-b](near-b.md)\n'
+              '- [edge-a](edge-a.md)\n- [edge-b](edge-b.md)\n'
+              '- [helper](../pkg/helper.py)\n')
         with open(os.path.join(cls.repo, 'README.md'), 'a', encoding='utf-8') as fh:
             fh.write('\n- [index](docs/index.md)\n')
 
@@ -106,8 +122,21 @@ class TestPlantedDefects(unittest.TestCase):
 
     def test_near_duplicate_found(self):
         self.assertIn('near_duplicate', self.by_category)
-        self.assertEqual(self.files_for('near_duplicate'),
-                         {'docs/near-a.md', 'docs/near-b.md'})
+        self.assertEqual(
+            {'docs/near-a.md', 'docs/near-b.md'} & self.files_for('near_duplicate'),
+            {'docs/near-a.md', 'docs/near-b.md'})
+
+    def test_python_import_resolves_end_to_end(self):
+        """pkg/core.py's only inbound edge is an import, so if import
+        resolution breaks it becomes a false orphan."""
+        self.assertNotIn('pkg/core.py', self.files_for('orphan'))
+
+    def test_near_duplicate_found_at_a_boundary_length_ratio(self):
+        """The pair sits between the sound cutoff (0.905) and the unsound
+        0.95 an earlier version used, so an unsound gate would drop it."""
+        self.assertEqual(
+            {'docs/edge-a.md', 'docs/edge-b.md'} & self.files_for('near_duplicate'),
+            {'docs/edge-a.md', 'docs/edge-b.md'})
 
     def test_clean_files_produce_no_findings(self):
         flagged = {e['file'] for f in self.result['findings'] for e in f['evidence']}
