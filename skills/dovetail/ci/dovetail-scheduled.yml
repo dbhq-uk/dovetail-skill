@@ -1,0 +1,90 @@
+# dovetail - scheduled full audit.
+#
+# Copy this into .github/workflows/ in your own repository, alongside
+# dovetail-pr.yml. The two jobs exist on two cadences because they want
+# opposite things:
+#
+#   dovetail-pr.yml   deterministic only. Fast, free, reproducible, zero false
+#                     positives, and therefore safe to block a merge on.
+#   this file         deterministic + judgement. Slow, metered and
+#                     probabilistic - so it reports and NEVER fails the build.
+#                     A gate that produces false positives is one people learn
+#                     to override, which costs more than it catches.
+#
+# Output is upserted into a single tracking issue, found by label and rewritten
+# in place. A weekly job that opens a fresh issue every week gets muted.
+name: dovetail (scheduled)
+
+on:
+  schedule:
+    # Monday morning, so the week starts with the list rather than ending on it.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Model profile'
+        required: false
+        default: 'default'
+        type: choice
+        options: [default, cheap, thorough]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: full audit
+    runs-on: ubuntu-latest
+    steps:
+      # Whole-repository, not diff-scoped: this is where accumulated debt lives.
+      # Full history all the same - the deterministic layer reads git for
+      # co-change coupling and TODO age.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check out dovetail
+        uses: actions/checkout@v4
+        with:
+          repository: dbhq-uk/dovetail-skill
+          path: .dovetail-skill
+
+      # Layer 1 first and separately: it needs no model, so its findings exist
+      # even if everything below fails.
+      - name: Deterministic scan
+        run: |
+          python .dovetail-skill/skills/dovetail/scripts/scan.py . \
+            --format json > scan.json
+          python -c "import json;d=json.load(open('scan.json'));print(len(d['findings']),'deterministic findings')"
+
+      - name: Install the Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Judgement layer
+        # OAuth from `claude setup-token`, stored as a repository secret, so
+        # this runs on a Pro/Max subscription rather than per-token API billing.
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN is not set - deterministic findings only"
+            echo '{"findings": [], "failed_reviewers": ["all (no auth token configured)"]}' > judged.json
+            exit 0
+          fi
+          python .dovetail-skill/skills/dovetail/scripts/ci_dispatch.py . \
+            --profile "${{ inputs.profile || 'default' }}" \
+            --out judged.json > /dev/null
+
+      - name: Update the tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .dovetail-skill/skills/dovetail/scripts/issue.py \
+            --findings judged.json --scan scan.json
+
+      # Deliberately no `--fail-on`. This job reports; it does not gate.
