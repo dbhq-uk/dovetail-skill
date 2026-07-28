@@ -117,7 +117,7 @@ def format_github(result: dict) -> str:
         )
     for name in result['failed_checks']:
         lines.append(
-            f'::warning title=dovetail::check {_escape_data(name)} failed; '
+            f'::error title=dovetail::check {_escape_data(name)} failed; '
             'findings may be incomplete'
         )
     return '\n'.join(lines)
@@ -129,9 +129,18 @@ def exit_code(result: dict, fail_on: str) -> int:
     Judgement-sourced findings can never fail a build: they are probabilistic,
     and a merge gate that produces false positives is one people learn to
     override.
+
+    A check that raised is treated as failure too, whenever `fail_on` is not
+    'none': `run_scan` swallows check exceptions into `failed_checks` so one
+    broken check cannot take down the whole run, but an incomplete result
+    must not read as a clean, passing one — a regression that makes a check
+    throw would otherwise produce a green build with only an easily-missed
+    annotation.
     """
     if fail_on == 'none':
         return 0
+    if result['failed_checks']:
+        return 1
     threshold = SEVERITY_RANK[fail_on]
     for finding in result['findings']:
         if not (finding['source'] == 'graph' or finding['source'].startswith('check:')):

@@ -250,6 +250,28 @@ class TestTranslationLag(unittest.TestCase):
         entries = [entry('docs/ja/orphan.md', when='2026-01-01T00:00:00+00:00')]
         self.assertEqual(translation_lag(inv(entries), graph()), [])
 
+    def test_compares_instants_not_strings_across_offsets(self):
+        # 02:00+05:00 is 21:00 the previous day UTC -- EARLIER than 01:00+00:00,
+        # though it sorts later as a string.
+        entries = [
+            entry('README.md', when='2026-07-28T01:00:00+00:00'),
+            entry('docs/ja/README.md', when='2026-07-28T02:00:00+05:00'),
+        ]
+        found = translation_lag(inv(entries), graph())
+        self.assertEqual(len(found), 1)
+
+    def test_no_finding_when_translation_is_genuinely_newer_across_offsets(self):
+        entries = [
+            entry('README.md', when='2026-07-28T01:00:00+05:00'),
+            entry('docs/ja/README.md', when='2026-07-28T01:00:00+00:00'),
+        ]
+        self.assertEqual(translation_lag(inv(entries), graph()), [])
+
+    def test_unparseable_timestamp_is_skipped(self):
+        entries = [entry('README.md', when='not-a-date'),
+                   entry('docs/ja/README.md', when='2026-01-01T00:00:00+00:00')]
+        self.assertEqual(translation_lag(inv(entries), graph()), [])
+
 
 class TestAllChecks(unittest.TestCase):
     def test_exposes_every_check(self):

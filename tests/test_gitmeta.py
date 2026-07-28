@@ -128,6 +128,16 @@ class TestLastCommitTimes(GitRepoCase):
         finally:
             os.unlink(path)
 
+    def test_many_paths_are_chunked_without_overflowing(self):
+        for i in range(120):
+            write(self.repo, f'f{i:04d}.md', f'content {i}\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'many')
+        paths = [f'f{i:04d}.md' for i in range(120)]
+        times = last_commit_times(self.repo, paths)
+        self.assertEqual(len(times), 120)
+        self.assertTrue(all(v is not None for v in times.values()))
+
 
 class TestChangedSince(GitRepoCase):
     def test_lists_files_changed_since_ref(self):

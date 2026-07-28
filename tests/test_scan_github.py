@@ -79,9 +79,9 @@ class TestFormatGithub(unittest.TestCase):
     def test_no_findings_emits_no_annotations(self):
         self.assertEqual(format_github(result([])).strip(), '')
 
-    def test_failed_checks_emit_a_warning(self):
+    def test_failed_checks_emit_an_error(self):
         out = format_github(result([], failed=['orphans']))
-        self.assertIn('::warning ', out)
+        self.assertIn('::error ', out)
         self.assertIn('orphans', out)
 
 
@@ -110,6 +110,17 @@ class TestExitCode(unittest.TestCase):
     def test_judgement_findings_never_fail_the_build(self):
         judged = finding(severity='high', source='reviewer:contradiction')
         self.assertEqual(exit_code(result([judged]), 'high'), 0)
+
+    def test_a_failed_check_fails_the_build(self):
+        self.assertEqual(exit_code(result([], failed=['broken_links']), 'high'), 1)
+
+    def test_a_failed_check_does_not_fail_when_fail_on_is_none(self):
+        self.assertEqual(exit_code(result([], failed=['broken_links']), 'none'), 0)
+
+    def test_failed_checks_are_error_annotations(self):
+        out = format_github(result([], failed=['broken_links']))
+        self.assertIn('::error ', out)
+        self.assertNotIn('::warning ', out)
 
 
 if __name__ == '__main__':

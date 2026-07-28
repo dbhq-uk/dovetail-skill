@@ -3,8 +3,9 @@
 Findings derived from the reference graph and the inventory.
 
 Everything here is exact: it is computed from resolved edges and content
-hashes, never inferred. Task 10 adds the duplicate, orphan, asset, and
-translation checks to this module.
+hashes, never inferred. This module holds the six deterministic checks
+(`ALL_CHECKS`): broken links, dangling anchors, orphans, exact duplicates,
+near duplicates, and translation lag.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import difflib
 import os
 import posixpath
 import re
+from datetime import datetime
 
 from store import make_finding
 
@@ -299,7 +301,22 @@ def translation_lag(inventory: dict, graph: dict) -> list[dict]:
             continue
 
         base_when = times[base]
-        if when is None or base_when is None or when >= base_when:
+        if when is None or base_when is None:
+            continue
+
+        # `last_commit_iso` carries the committer's local UTC offset (`%cI`),
+        # and that offset varies per commit -- comparing the raw strings
+        # lexicographically is wrong across offsets (e.g. "...+05:00" sorts
+        # after "...+00:00" even when it names an earlier instant). Parse to
+        # real instants before comparing; the raw strings still go in the
+        # evidence below. A value that fails to parse skips the pair rather
+        # than raising or falling back to the broken string comparison.
+        try:
+            when_instant = datetime.fromisoformat(when)
+            base_instant = datetime.fromisoformat(base_when)
+        except ValueError:
+            continue
+        if when_instant >= base_instant:
             continue
 
         findings.append(make_finding(

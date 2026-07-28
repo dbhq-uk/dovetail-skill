@@ -19,6 +19,13 @@ RECORD_SEP = '\x1e'
 # (NotADirectoryError), or git itself reporting an error (CalledProcessError).
 _SOFT_ERRORS = (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError)
 
+# `last_commit_times` passes every path as a pathspec argument to a single
+# `git log` call. Linux ARG_MAX is ~2MB, so an unbatched call raises a plain
+# OSError (E2BIG) somewhere around 50-70k paths -- not one of _SOFT_ERRORS, so
+# it must not happen at all rather than being caught. This chunk size keeps
+# each command line well under that limit for any realistic path length.
+_PATH_CHUNK_SIZE = 2000
+
 
 def _run(repo_root: str, args: list[str]) -> str:
     return subprocess.run(
@@ -54,27 +61,37 @@ def list_files(repo_root: str) -> list[str]:
 
 
 def last_commit_times(repo_root: str, paths: list[str]) -> dict[str, str | None]:
-    """Map each path to its most recent committer ISO time, or None."""
+    """Map each path to its most recent committer ISO time, or None.
+
+    `paths` is chunked into batches of `_PATH_CHUNK_SIZE` so the command line
+    for any single `git log` invocation cannot overflow ARG_MAX. `times` is
+    one dict shared across every batch, so the existing first-occurrence-wins
+    guard (`times.get(line, 'x') is None`) still gives the most recent commit
+    overall: each batch is independently reverse-chronological for its own
+    paths, and a path only ever appears in one batch.
+    """
     times: dict[str, str | None] = {p: None for p in paths}
     if not paths:
         return times
 
-    try:
-        out = _run(repo_root, [
-            '-c', 'core.quotePath=false',
-            'log', '--diff-merges=first-parent',
-            f'--format={RECORD_SEP}%cI', '--name-only', '--', *paths,
-        ])
-    except _SOFT_ERRORS:
-        return times  # no commits yet, or git failed — everything stays None
+    for start in range(0, len(paths), _PATH_CHUNK_SIZE):
+        batch = paths[start:start + _PATH_CHUNK_SIZE]
+        try:
+            out = _run(repo_root, [
+                '-c', 'core.quotePath=false',
+                'log', '--diff-merges=first-parent',
+                f'--format={RECORD_SEP}%cI', '--name-only', '--', *batch,
+            ])
+        except _SOFT_ERRORS:
+            continue  # no commits yet, or git failed — this batch stays None
 
-    current: str | None = None
-    for line in out.split('\n'):
-        if line.startswith(RECORD_SEP):
-            current = line[1:].strip() or None
-        elif line and current is not None and times.get(line, 'x') is None:
-            # First occurrence is the most recent commit; later ones are older.
-            times[line] = current
+        current: str | None = None
+        for line in out.split('\n'):
+            if line.startswith(RECORD_SEP):
+                current = line[1:].strip() or None
+            elif line and current is not None and times.get(line, 'x') is None:
+                # First occurrence is the most recent commit; later ones are older.
+                times[line] = current
     return times
 
 
