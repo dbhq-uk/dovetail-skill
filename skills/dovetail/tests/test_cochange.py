@@ -23,11 +23,20 @@ from refgraph import build_graph  # noqa: E402
 
 class Base(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
+        # ignore_cleanup_errors: belt and braces for the same race the gc
+        # settings below prevent - teardown must never fail a passing test.
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.repo = self._tmp.name
         self.git('init', '-q')
         self.git('config', 'user.email', 't@example.com')
         self.git('config', 'user.name', 'T')
+        # These suites commit repeatedly to build a history. That can trip
+        # git's auto-gc, whose background process is still writing into
+        # .git/objects when TemporaryDirectory tears the tree down - an
+        # OSError that fails a test which actually passed. It reproduced only
+        # on CI, and only sometimes, which is the worst kind.
+        self.git('config', 'gc.auto', '0')
+        self.git('config', 'maintenance.auto', 'false')
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

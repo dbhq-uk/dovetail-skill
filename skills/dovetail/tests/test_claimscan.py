@@ -22,9 +22,12 @@ from refgraph import build_graph  # noqa: E402
 
 class Base(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.repo = self._tmp.name
         subprocess.run(['git', 'init', '-q'], cwd=self.repo, check=True)
+        for key, value in (('gc.auto', '0'), ('maintenance.auto', 'false')):
+            subprocess.run(['git', '-C', self.repo, 'config', key, value],
+                           check=True, capture_output=True)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
