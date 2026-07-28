@@ -35,6 +35,11 @@ _HTML_ATTR = re.compile(r'\b(?:src|href)\s*=\s*["\']([^"\']+)["\']')
 _IMPORT = re.compile(r"""(?:from|require\s*\(|import)\s*['"]([^'"]+)['"]""")
 _PATH_LITERAL = re.compile(r'(?<![\w/])((?:\.{1,2}/)?(?:[\w.-]+/)+[\w.-]+\.\w+)')
 
+# Python imports are unquoted, unlike the JS/TS specifiers `_IMPORT` handles.
+# Applied only to .py sources — the same words in prose must not create edges.
+_PY_FROM = re.compile(r'^\s*from\s+(\.*)([\w.]*)\s+import\s')
+_PY_IMPORT = re.compile(r'^\s*import\s+([\w.]+)')
+
 # TypeScript sources compile to these specifiers, so an import of './a.js'
 # resolves to a.ts when a.js does not exist.
 _JS_TO_TS = {'.js': ['.ts', '.tsx'], '.jsx': ['.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts']}
@@ -69,6 +74,35 @@ def _split_anchor(target: str) -> tuple[str, str | None]:
         return target, None
     path_part, _, anchor = target.partition('#')
     return path_part, (anchor or None)
+
+
+def _resolve_py_module(src: str, dots: str, module: str, known: set[str]) -> str | None:
+    """Resolve a Python import to a repo file, or None if it is not one of ours.
+
+    Tries the importing file's own directory first (how these skills import
+    siblings), then a package path from the repository root. `import os`
+    resolves to neither, so stdlib imports correctly produce no edge.
+    """
+    parts = [p for p in module.split('.') if p] if module else []
+
+    bases = []
+    if dots:
+        base = posixpath.dirname(src)
+        for _ in range(len(dots) - 1):
+            base = posixpath.dirname(base)
+        bases.append(base)
+    else:
+        bases.append(posixpath.dirname(src))
+        bases.append('')
+
+    for base in bases:
+        stem = posixpath.normpath(posixpath.join(base, *parts)) if parts else base
+        if not stem or stem.startswith('..'):
+            continue
+        for candidate in (f'{stem}.py', posixpath.join(stem, '__init__.py')):
+            if candidate in known:
+                return candidate
+    return None
 
 
 def _scan_line(line: str) -> list[tuple[str, str]]:
@@ -128,6 +162,8 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
         if path.lower().endswith(('.md', '.markdown')):
             headings[path] = heading_slugs(body)
 
+        is_python = path.lower().endswith('.py')
+
         in_fence = False
         for lineno, line in enumerate(body.split('\n'), start=1):
             if _FENCE.match(line):
@@ -148,6 +184,21 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                     'src': path, 'line': lineno, 'kind': kind,
                     'raw': raw, 'dst': dst, 'anchor': anchor,
                 })
+
+            if is_python:
+                py_match = _PY_FROM.match(line)
+                if py_match:
+                    dst = _resolve_py_module(path, py_match.group(1), py_match.group(2), known)
+                    if dst is not None:
+                        edges.append({'src': path, 'line': lineno, 'kind': 'import',
+                                      'raw': line.strip(), 'dst': dst, 'anchor': None})
+                else:
+                    py_match = _PY_IMPORT.match(line)
+                    if py_match:
+                        dst = _resolve_py_module(path, '', py_match.group(1), known)
+                        if dst is not None:
+                            edges.append({'src': path, 'line': lineno, 'kind': 'import',
+                                          'raw': line.strip(), 'dst': dst, 'anchor': None})
 
     inbound: dict[str, list[str]] = {p: [] for p in known}
     for edge in edges:
