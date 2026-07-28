@@ -79,6 +79,74 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             'counts': counts, 'failed_checks': failed_checks}
 
 
+def _escape(message: str) -> str:
+    """Escape a workflow-command message per GitHub's rules."""
+    return (message.replace('%', '%25')
+                   .replace('\r', '%0D')
+                   .replace('\n', '%0A')
+                   .replace(',', '%2C')
+                   .replace(':', '%3A'))
+
+
+def format_github(result: dict) -> str:
+    """Render findings as GitHub workflow annotations."""
+    lines: list[str] = []
+    for finding in result['findings']:
+        level = 'error' if finding['severity'] == 'high' else 'warning'
+        spot = finding['evidence'][0] if finding['evidence'] else {'file': '', 'line': 1}
+        message = _escape(f"{finding['problem']} {finding['suggestion']}".strip())
+        lines.append(
+            f"::{level} file={spot['file']},line={spot['line']},"
+            f"title={finding['category']}::{message}"
+        )
+    for name in result['failed_checks']:
+        lines.append(f'::warning title=dovetail::check {name} failed; findings may be incomplete')
+    return '\n'.join(lines)
+
+
+def exit_code(result: dict, fail_on: str) -> int:
+    """1 when a deterministic finding meets the threshold, else 0.
+
+    Judgement-sourced findings can never fail a build: they are probabilistic,
+    and a merge gate that produces false positives is one people learn to
+    override.
+    """
+    if fail_on == 'none':
+        return 0
+    threshold = SEVERITY_RANK[fail_on]
+    for finding in result['findings']:
+        if not (finding['source'] == 'graph' or finding['source'].startswith('check:')):
+            continue
+        if SEVERITY_RANK[finding['severity']] <= threshold:
+            return 1
+    return 0
+
+
+def _summary_markdown(result: dict) -> str:
+    """Job-summary table for the GitHub Actions run page."""
+    counts = result['counts']
+    lines = [
+        '## dovetail',
+        '',
+        f"{counts['high']} high · {counts['medium']} medium · {counts['low']} low"
+        f" · {result['suppressed']} suppressed by prior decisions",
+        '',
+    ]
+    if result['findings']:
+        lines += ['| Severity | Category | File | Problem |',
+                  '|---|---|---|---|']
+        for finding in result['findings']:
+            spot = finding['evidence'][0] if finding['evidence'] else {'file': '', 'line': 1}
+            problem = finding['problem'].replace('|', '\\|')
+            lines.append(
+                f"| {finding['severity']} | {finding['category']} "
+                f"| `{spot['file']}:{spot['line']}` | {problem} |"
+            )
+    else:
+        lines.append('No findings.')
+    return '\n'.join(lines) + '\n'
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='scan.py', description='dovetail deterministic scan (read-only)')
@@ -101,8 +169,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f'error: {exc}', file=sys.stderr)
         return 2
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0
+    if args.format == 'github':
+        rendered = format_github(result)
+        if rendered:
+            print(rendered)
+        summary = os.environ.get('GITHUB_STEP_SUMMARY')
+        if summary:
+            with open(summary, 'a', encoding='utf-8') as fh:
+                fh.write(_summary_markdown(result))
+    else:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    return exit_code(result, args.fail_on)
 
 
 if __name__ == '__main__':
