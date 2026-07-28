@@ -95,6 +95,13 @@ ENTRY_POINT_NAMES = {
 # `spec/` and `specs/` commonly hold specification *documents*, not tests, so
 # they are not exempted here — only basename patterns like `.spec.ts` are.
 TEST_DIR_NAMES = frozenset({'test', 'tests', '__tests__'})
+# `.spec`/`.test`/`test_` name a test only in source files; a .spec.md is a
+# specification document and must stay orphan-detectable.
+TEST_FILE_EXTS = frozenset({
+    '.py', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs',
+    '.go', '.rb', '.rs', '.java', '.kt', '.swift', '.c', '.h', '.cpp', '.m',
+    '.sh', '.php', '.cs', '.scala', '.ex', '.exs',
+})
 NEAR_DUPLICATE_MIN_BYTES = 200
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
@@ -108,11 +115,16 @@ def _is_entry_point(path: str) -> bool:
     if any(part in TEST_DIR_NAMES for part in parts[:-1]):
         return True
     basename = parts[-1]
-    if basename.startswith('test_') or basename.startswith('test.'):
-        return True
-    stem = posixpath.splitext(basename)[0]
-    if stem.endswith('_test') or stem.endswith('.test') or stem.endswith('.spec'):
-        return True
+    stem, ext = posixpath.splitext(basename)
+    # `.spec` / `.test` name a test only in source files. A specification
+    # *document* like docs/auth.spec.md is prose, and exempting it would hide
+    # a genuine orphan — the same mistake as treating a specs/ directory as
+    # a test directory.
+    if ext.lower() in TEST_FILE_EXTS:
+        if basename.startswith('test_') or basename.startswith('test.'):
+            return True
+        if stem.endswith('_test') or stem.endswith('.test') or stem.endswith('.spec'):
+            return True
     if len(parts) == 1:
         stem = posixpath.splitext(parts[0])[0].lower()
         if stem in ENTRY_POINT_NAMES:
