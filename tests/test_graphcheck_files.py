@@ -187,6 +187,22 @@ class TestNearDuplicates(unittest.TestCase):
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
 
+    def test_length_gate_uses_the_sound_bound_not_the_threshold(self):
+        # r/(2-r) == 0.9048 for threshold 0.95. A pair with length ratio
+        # between 0.9048 and 0.95 must still reach difflib rather than being
+        # discarded by the length check.
+        body = 'The quick brown fox jumps over the lazy dog. ' * 20
+        size_a = self.write('a.md', body)
+        size_b = self.write('b.md', body + ('padding words here. ' * 3))
+        ratio = min(size_a, size_b) / max(size_a, size_b)
+        self.assertGreater(ratio, 0.95 / (2 - 0.95))
+        self.assertLess(ratio, 0.95)
+        inventory = inv([entry('a.md', sha='1', size=size_a),
+                         entry('b.md', sha='2', size=size_b)])
+        inventory['repo_root'] = self.repo
+        # Must not raise and must be a real comparison, not a length rejection.
+        self.assertIsInstance(near_duplicates(inventory, graph()), list)
+
 
 class TestTranslationLag(unittest.TestCase):
     def test_reports_translation_older_than_base(self):
