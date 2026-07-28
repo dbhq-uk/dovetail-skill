@@ -60,6 +60,32 @@ class TestHeadingSlugs(unittest.TestCase):
     def test_empty_document(self):
         self.assertEqual(heading_slugs(''), [])
 
+    def test_literal_suffixed_heading_does_not_collide(self):
+        # github-slugger registers emitted slugs, so a literal `Setup-1`
+        # heading must not collide with the slug generated for a second
+        # `Setup`.
+        md = '# Setup\n## Setup\n### Setup-1\n'
+        self.assertEqual(heading_slugs(md), ['setup', 'setup-1', 'setup-1-1'])
+
+    def test_mismatched_fence_marker_does_not_close_the_block(self):
+        # A tilde line inside a backtick block is content, not a closing fence.
+        md = '```\n~~~\n# Not a heading\n```\n\n# Real\n'
+        self.assertEqual(heading_slugs(md), ['real'])
+
+    def test_shorter_closing_fence_does_not_close_the_block(self):
+        md = '````\n```\n# Not a heading\n````\n\n# Real\n'
+        self.assertEqual(heading_slugs(md), ['real'])
+
+    def test_heading_indented_up_to_three_spaces(self):
+        self.assertEqual(heading_slugs('   # Indented\n'), ['indented'])
+
+    def test_heading_indented_four_spaces_is_a_code_block(self):
+        # Four spaces makes it an indented code block, not a heading.
+        self.assertEqual(heading_slugs('    # Not a heading\n'), [])
+
+    def test_unclosed_fence_still_swallows_the_rest(self):
+        self.assertEqual(heading_slugs('# Real\n\n```\n# Hidden\n'), ['real'])
+
 
 if __name__ == '__main__':
     unittest.main()
