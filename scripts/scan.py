@@ -79,13 +79,28 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             'counts': counts, 'failed_checks': failed_checks}
 
 
-def _escape(message: str) -> str:
-    """Escape a workflow-command message per GitHub's rules."""
+def _escape_data(message: str) -> str:
+    """Escape a workflow-command message (the part after `::`).
+
+    GitHub decodes only these three in the data portion; escaping `:` or `,`
+    here would render literally in the Actions UI.
+    """
     return (message.replace('%', '%25')
                    .replace('\r', '%0D')
-                   .replace('\n', '%0A')
-                   .replace(',', '%2C')
-                   .replace(':', '%3A'))
+                   .replace('\n', '%0A'))
+
+
+def _escape_property(value: str) -> str:
+    """Escape a workflow-command property value (file=, line=, title=).
+
+    Property values additionally need `:` and `,` escaped, or they would
+    terminate the property list early and corrupt the annotation.
+    """
+    return (value.replace('%', '%25')
+                 .replace('\r', '%0D')
+                 .replace('\n', '%0A')
+                 .replace(':', '%3A')
+                 .replace(',', '%2C'))
 
 
 def format_github(result: dict) -> str:
@@ -94,13 +109,17 @@ def format_github(result: dict) -> str:
     for finding in result['findings']:
         level = 'error' if finding['severity'] == 'high' else 'warning'
         spot = finding['evidence'][0] if finding['evidence'] else {'file': '', 'line': 1}
-        message = _escape(f"{finding['problem']} {finding['suggestion']}".strip())
+        message = _escape_data(f"{finding['problem']} {finding['suggestion']}".strip())
         lines.append(
-            f"::{level} file={spot['file']},line={spot['line']},"
-            f"title={finding['category']}::{message}"
+            f"::{level} file={_escape_property(spot['file'])},"
+            f"line={spot['line']},"
+            f"title={_escape_property(finding['category'])}::{message}"
         )
     for name in result['failed_checks']:
-        lines.append(f'::warning title=dovetail::check {name} failed; findings may be incomplete')
+        lines.append(
+            f'::warning title=dovetail::check {_escape_data(name)} failed; '
+            'findings may be incomplete'
+        )
     return '\n'.join(lines)
 
 
