@@ -30,7 +30,11 @@ def _normalise(text: str) -> str:
 
 def fingerprint(category: str, files: Iterable[str], claim: str) -> str:
     """Stable content-derived identity for a finding."""
-    key = '|'.join([category, ','.join(sorted(set(files))), _normalise(claim)])
+    # json.dumps rather than string concatenation: a delimiter inside a
+    # component (a filename containing a comma, say) would otherwise let two
+    # genuinely different findings collapse to the same key.
+    key = json.dumps([category, sorted(set(files)), _normalise(claim)],
+                     sort_keys=True, ensure_ascii=False)
     return 'sha256:' + hashlib.sha256(key.encode('utf-8')).hexdigest()
 
 

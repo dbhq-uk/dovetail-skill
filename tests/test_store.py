@@ -48,6 +48,18 @@ class TestFingerprint(unittest.TestCase):
         b = fingerprint('staleness', ['a.md'], 'timeout is 60s')
         self.assertNotEqual(a, b)
 
+    def test_delimiter_in_a_filename_does_not_collide(self):
+        # A comma inside one filename must not be indistinguishable from two
+        # separate filenames — the components are serialised, not concatenated.
+        one_file = fingerprint('broken_link', ['a.md,b.md'], 'same claim')
+        two_files = fingerprint('broken_link', ['a.md', 'b.md'], 'same claim')
+        self.assertNotEqual(one_file, two_files)
+
+    def test_delimiter_in_a_claim_does_not_collide(self):
+        a = fingerprint('broken_link', ['x.md'], 'alpha|beta')
+        b = fingerprint('broken_link|x.md', [], 'alpha|beta')
+        self.assertNotEqual(a, b)
+
 
 class TestMakeFinding(unittest.TestCase):
     def test_produces_every_required_key(self):
