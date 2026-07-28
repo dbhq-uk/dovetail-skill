@@ -35,6 +35,24 @@ _ENTITY_PATTERNS = [
         r'(?<![\w.])(\d+(?:\.\d+)?)\s?'
         r'(ms|s|sec|secs|seconds?|m|min|mins|minutes?|h|hrs?|hours?|d|days?|'
         r'[KMGT]?B|%|px|rem)(?![\w])')),
+    # A number followed by a noun that can carry a threshold. Unit-bearing
+    # quantities above only recognise ms/s/%/B and so on, which misses the
+    # common documentation case: "20,000 words" in one file and "18,000 words"
+    # in another is a contradiction and neither carries a unit. Found by
+    # running head-to-head against upkeep, which caught it while dovetail
+    # did not.
+    #
+    # The noun list is curated rather than "any word". Matching any word was
+    # tried and abandoned: it took one repository from 12 clusters to 238,
+    # keyed on things like "2 above" and "3 complete". Every cluster costs the
+    # adjudicating model real tokens, so a loose key is not free.
+    ('measure', re.compile(
+        r'(?<![\w.])(\d[\d,]*)\s+('
+        r'words?|tokens?|characters?|chars?|lines?|pages?|'
+        r'retries|retry|attempts?|iterations?|rounds?|'
+        r'sources?|results?|items?|entries|records?|rows?|'
+        r'requests?|calls?|queries|files?|steps?'
+        r')(?![\w])')),
     ('path', re.compile(r'`([\w.@-]+(?:/[\w.@-]+)+)`')),
     ('env', re.compile(r'(?<![\w])([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+)(?![\w])')),
     ('port', re.compile(r'(?<![\w.:])(?:port\s+|:)(\d{2,5})(?![\w.])', re.I)),
@@ -106,9 +124,33 @@ def _entities(span: str) -> set[tuple[str, str]]:
             if kind == 'quantity':
                 unit = groups[-1].lower()
                 found.add((kind, _UNIT_ALIASES.get(unit, unit)))
+            elif kind == 'measure':
+                # Crude singularisation is enough: the key only has to be
+                # stable across spans, not linguistically correct.
+                noun = groups[-1].lower().rstrip('s') or groups[-1].lower()
+                found.add((kind, noun))
             else:
                 found.add((kind, groups[0].lower()))
     return found
+
+
+_NUMERIC_KINDS = frozenset({'measure', 'quantity'})
+_NUMBERS = re.compile(r'(?<![\w.])(\d[\d,]*(?:\.\d+)?)')
+
+
+def _values_disagree(kind: str, key: str, spans: list[dict]) -> bool:
+    """Whether the numbers attached to this entity differ across spans.
+
+    A cluster of spans that all state the same figure is agreement, and paying
+    a model to read it produces nothing. Ranges ("2-3 paragraphs") contribute
+    every number they contain, so a range that overlaps another span's figure
+    still counts as agreement rather than a spurious conflict.
+    """
+    seen: set[str] = set()
+    for span in spans:
+        for raw in _NUMBERS.findall(span['quote']):
+            seen.add(raw.replace(',', '').lstrip('0') or '0')
+    return len(seen) > 1
 
 
 def build_clusters(inventory: dict, graph: dict) -> list[dict]:
@@ -140,6 +182,12 @@ def build_clusters(inventory: dict, graph: dict) -> list[dict]:
             continue
         if len(spans) > MAX_CLUSTER_SPANS:
             continue  # structural vocabulary, not a disputed fact
+        if kind in _NUMERIC_KINDS and not _values_disagree(kind, value, spans):
+            # Every span agrees on the number, so there is nothing to
+            # adjudicate. Without this, counting nouns in prose - "2-3
+            # paragraphs" repeated in five templates - flood the adjudicator
+            # with clusters that are agreement by construction.
+            continue
         clusters.append({
             'entity_kind': kind,
             'entity': value,
