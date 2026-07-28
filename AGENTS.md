@@ -10,13 +10,39 @@ Guidance for AI agents (and people) working in this repository.
 
 ```
 .claude-plugin/plugin.json     # plugin manifest
-skills/dovetail/SKILL.md       # the skill (agent-facing instructions)
+skills/dovetail/SKILL.md       # the skill: dispatch and the triage loop
 skills/dovetail/scripts/       # python, standard library only
-skills/dovetail/ci/            # workflow template users copy into their own repo
-skills/dovetail/tests/         # 243 tests, offline
+skills/dovetail/references/    # the finding contract and one rubric per reviewer
+skills/dovetail/ci/            # workflow templates users copy into their own repo
+skills/dovetail/tests/         # offline, no model calls
 install.sh / install-codex.sh  # local symlink installers (Claude / Codex)
 docs/design-notes.md           # why the tool is shaped this way
 ```
+
+### The three layers
+
+**Layer 1, deterministic** - [`scan.py`](skills/dovetail/scripts/scan.py) runs
+the graph queries, the exact checks, the convention checks, the git-history
+signals and any repo-local plugins. Seconds, no model, no network.
+
+**Layer 2, judgement** - [`reviewer.py`](skills/dovetail/scripts/reviewer.py)
+holds the roster, tiering and the shared validator;
+[`claimscan.py`](skills/dovetail/scripts/claimscan.py) narrows contradiction
+candidates into clusters. Reviewers run as in-session subagents interactively,
+or through [`ci_dispatch.py`](skills/dovetail/scripts/ci_dispatch.py) for the
+scheduled job. Rubrics live in
+[`references/`](skills/dovetail/references/README.md).
+
+**Layer 3, triage** - entirely in [`SKILL.md`](skills/dovetail/SKILL.md). No
+Python TUI: findings are rendered into the session as markdown, which makes the
+loop a conversation that can be interrupted and questioned rather than a modal
+application.
+
+CI templates: [`dovetail-pr.yml`](skills/dovetail/ci/dovetail-pr.yml)
+(deterministic, gates a merge) and
+[`dovetail-scheduled.yml`](skills/dovetail/ci/dovetail-scheduled.yml)
+(full audit, reports via [`issue.py`](skills/dovetail/scripts/issue.py), never
+gates).
 
 ## The three constraints that define this tool
 

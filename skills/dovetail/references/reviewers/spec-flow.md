@@ -6,6 +6,10 @@ The prior tool's `spec_flow`: diagrams and specifications versus the implementat
 This is genuinely hard and genuinely valuable, because a Mermaid diagram is the
 artefact most likely to be written once and never revisited.
 
+**Do not report** anything the deterministic layer owns - broken links,
+dangling anchors, orphans, duplicates, flag or signature drift, version
+divergence. Those are computed exactly; your version would be a guess.
+
 ## Look for
 
 - A Mermaid, PlantUML or DOT diagram whose nodes or edges no longer match the

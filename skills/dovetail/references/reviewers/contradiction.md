@@ -9,6 +9,11 @@ exists for, and the one the prior tool structurally cannot produce: each of its
 reviewers gets a disjoint file list and is told to review only those, so no
 reviewer ever holds two documents at once.
 
+**Do not report** anything the deterministic layer owns - broken links,
+dangling anchors, orphans, duplicates, flag or signature drift, version
+divergence between manifests. Those are computed exactly, and a `contradiction`
+finding that restates one is a guess dressed up as a judgement.
+
 ## Your job
 
 For each cluster, decide: do these spans actually disagree?

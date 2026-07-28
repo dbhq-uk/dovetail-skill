@@ -35,7 +35,6 @@ _ENTITY_PATTERNS = [
         r'(?<![\w.])(\d+(?:\.\d+)?)\s?'
         r'(ms|s|sec|secs|seconds?|m|min|mins|minutes?|h|hrs?|hours?|d|days?|'
         r'[KMGT]?B|%|px|rem)(?![\w])')),
-    ('version', re.compile(r'(?<![\w.])v?(\d+\.\d+(?:\.\d+)?)(?![\w.])')),
     ('path', re.compile(r'`([\w.@-]+(?:/[\w.@-]+)+)`')),
     ('env', re.compile(r'(?<![\w])([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+)(?![\w])')),
     ('port', re.compile(r'(?<![\w.:])(?:port\s+|:)(\d{2,5})(?![\w.])', re.I)),
@@ -76,15 +75,39 @@ def _spans(text: str) -> list[tuple[int, str]]:
     return out
 
 
+# Unit aliases, so "30 seconds", "30 secs" and "30s" land in one bucket.
+_UNIT_ALIASES = {
+    'ms': 'ms',
+    's': 's', 'sec': 's', 'secs': 's', 'second': 's', 'seconds': 's',
+    'm': 'min', 'min': 'min', 'mins': 'min', 'minute': 'min', 'minutes': 'min',
+    'h': 'h', 'hr': 'h', 'hrs': 'h', 'hour': 'h', 'hours': 'h',
+    'd': 'd', 'day': 'd', 'days': 'd',
+}
+
+
 def _entities(span: str) -> set[tuple[str, str]]:
+    """Entities a span mentions, as (kind, key).
+
+    The key is what spans are grouped *by*, and for quantities it is the unit
+    rather than the number. Keying on the number was the original mistake: it
+    grouped spans that agree and separated the ones that disagree, which is
+    exactly backwards for finding contradictions. "30 seconds" and "60 seconds"
+    have to meet in one cluster for anyone to notice they conflict.
+
+    For a flag, path, env var or port the value *is* the subject, so those key
+    on the value as before.
+    """
     found: set[tuple[str, str]] = set()
     for kind, pattern in _ENTITY_PATTERNS:
         for match in pattern.finditer(span):
             groups = [g for g in match.groups() if g]
             if not groups:
                 continue
-            value = groups[0] if kind != 'quantity' else ''.join(groups)
-            found.add((kind, value.lower()))
+            if kind == 'quantity':
+                unit = groups[-1].lower()
+                found.add((kind, _UNIT_ALIASES.get(unit, unit)))
+            else:
+                found.add((kind, groups[0].lower()))
     return found
 
 
