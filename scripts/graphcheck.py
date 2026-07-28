@@ -22,11 +22,45 @@ from store import make_finding
 LINK_KINDS = {'md_link', 'md_image', 'md_refdef', 'html', 'import'}
 
 
+def _known_directories(inventory: dict) -> frozenset[str]:
+    """Every directory that contains at least one inventoried file.
+
+    The inventory lists files, so a link to a directory can never resolve to
+    an entry — but such a link is perfectly valid and renders on GitHub.
+    Without this, every directory link is reported as a high-severity broken
+    link, which would fail CI on a healthy repository.
+    """
+    dirs: set[str] = set()
+    for entry in inventory['files']:
+        parts = entry['path'].split('/')[:-1]
+        for i in range(1, len(parts) + 1):
+            dirs.add('/'.join(parts[:i]))
+    return frozenset(dirs)
+
+
+def _target_is_directory(src: str, raw: str, known_dirs: frozenset[str]) -> bool:
+    """True when a link target names a directory that exists in the repo."""
+    target = raw.partition('#')[0].rstrip('/')
+    if not target:
+        return False
+    if target.startswith('/'):
+        candidate = target.lstrip('/')
+    else:
+        candidate = posixpath.normpath(posixpath.join(posixpath.dirname(src), target))
+    if candidate.startswith('..'):
+        return False
+    return candidate in known_dirs
+
+
 def broken_links(inventory: dict, graph: dict) -> list[dict]:
     """Links whose target does not exist in the repository."""
+    known_dirs = _known_directories(inventory)
+
     grouped: dict[tuple[str, str], list[dict]] = {}
     for edge in graph['edges']:
         if edge['kind'] not in LINK_KINDS or edge['dst'] is not None:
+            continue
+        if _target_is_directory(edge['src'], edge['raw'], known_dirs):
             continue
         grouped.setdefault((edge['src'], edge['raw']), []).append(edge)
 
