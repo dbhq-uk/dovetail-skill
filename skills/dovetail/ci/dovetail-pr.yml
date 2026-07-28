@@ -1,4 +1,4 @@
-# dovetail — per-pull-request coherence check.
+# dovetail - per-pull-request coherence check.
 #
 # Copy this into .github/workflows/ in your own repository.
 #
@@ -39,12 +39,12 @@ jobs:
       - name: Check out dovetail
         uses: actions/checkout@v4
         with:
-          repository: grinidx/claude-skills
+          repository: dbhq-uk/dovetail-skill
           path: .dovetail-skill
 
       - name: Scan
         run: |
-          python .dovetail-skill/dovetail/scripts/scan.py . \
+          python .dovetail-skill/skills/dovetail/scripts/scan.py . \
             --since "origin/${{ github.base_ref }}" \
             --format github \
             --fail-on high

@@ -1,0 +1,20 @@
+{
+  "name": "dovetail",
+  "description": "Check whether a repository agrees with itself, for Claude Code and Codex - broken links, dangling heading anchors, orphaned files, duplicate and near-duplicate content, and translations that have fallen behind. Deterministic: no model calls, no network, no dependencies, and it never modifies the repository it scans. Fast enough to run on every pull request.",
+  "version": "1.0.0",
+  "author": {
+    "name": "DBHQ",
+    "email": "dan@dbhq.uk"
+  },
+  "homepage": "https://dbhq.uk",
+  "repository": "https://github.com/dbhq-uk/dovetail-skill",
+  "license": "MIT",
+  "keywords": [
+    "documentation",
+    "linting",
+    "ci",
+    "link-checker",
+    "code-quality",
+    "docs-drift"
+  ]
+}

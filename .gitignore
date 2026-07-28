@@ -1,0 +1,20 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local agent tooling state
+.serena/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# dovetail needs no virtualenv (stdlib only), but do not commit one if a
+# contributor makes one anyway.
+.venv/

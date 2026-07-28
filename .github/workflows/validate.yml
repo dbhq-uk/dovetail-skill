@@ -1,0 +1,179 @@
+name: Validate plugin
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plugin manifest is valid JSON
+        run: jq empty .claude-plugin/plugin.json
+
+      - name: Check shell scripts parse
+        run: |
+          fail=0
+          while IFS= read -r s; do
+            bash -n "$s" || { echo "Syntax error: $s"; fail=1; }
+          done < <({ find . -maxdepth 1 -name '*.sh'; find skills -name '*.sh'; })
+          exit $fail
+
+      - name: Check the CI template users copy is valid YAML
+        # This file is shipped for people to paste into their own repository.
+        # A broken one fails in someone else's build, where it is far more
+        # confusing than it would be here.
+        run: python3 -c "import yaml,sys; yaml.safe_load(open('skills/dovetail/ci/dovetail-pr.yml')); print('CI template OK')"
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          python3 - <<'PY'
+          import sys, pathlib, re
+          ok = True
+          for skill in sorted(pathlib.Path("skills").glob("*/SKILL.md")):
+              text = skill.read_text(encoding="utf-8")
+              m = re.match(r"^---\n(.*?)\n---", text, re.S)
+              if not m:
+                  print(f"{skill}: missing YAML frontmatter"); ok = False; continue
+              fm = m.group(1)
+              name = re.search(r"^name:\s*(.+)$", fm, re.M)
+              desc = re.search(r"^description:\s*(.+)$", fm, re.M)
+              if not name:
+                  print(f"{skill}: missing 'name'"); ok = False
+              else:
+                  name = name.group(1).strip()
+                  if name != skill.parent.name:
+                      print(f"{skill}: name '{name}' != directory '{skill.parent.name}'"); ok = False
+                  if not re.fullmatch(r"[a-z0-9-]{1,64}", name):
+                      print(f"{skill}: name must be lowercase alphanumeric/hyphen, <=64 chars"); ok = False
+              if not desc:
+                  print(f"{skill}: missing 'description'"); ok = False
+              elif len(desc.group(1).strip()) > 1024:
+                  print(f"{skill}: description exceeds 1024 chars"); ok = False
+          sys.exit(0 if ok else 1)
+          PY
+
+      # Constraint 1 of three (see AGENTS.md): deterministic only. A
+      # third-party import would mean packages to install, which breaks the
+      # "nothing to set up" promise the README makes.
+      - name: Scripts import nothing outside the standard library
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, sys
+          STDLIB = set(sys.stdlib_module_names)
+          LOCAL = {p.stem for p in pathlib.Path("skills/dovetail/scripts").glob("*.py")}
+          bad = []
+          for f in sorted(pathlib.Path("skills/dovetail/scripts").glob("*.py")):
+              for node in ast.walk(ast.parse(f.read_text())):
+                  mods = []
+                  if isinstance(node, ast.Import):
+                      mods = [a.name.split(".")[0] for a in node.names]
+                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                      mods = [node.module.split(".")[0]]
+                  for m in mods:
+                      if m not in STDLIB and m not in LOCAL:
+                          bad.append(f"{f}: imports third-party '{m}'")
+          print("\n".join(bad) if bad else "All imports are stdlib or local.")
+          sys.exit(1 if bad else 0)
+          PY
+
+      # Constraint 2: never write to the scanned repository. store.append_decision
+      # is a helper the scan path deliberately does not call - if it ever gains a
+      # caller there, the tool has started editing people's repositories.
+      - name: The scan path never writes to the target repository
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          scripts = pathlib.Path("skills/dovetail/scripts")
+          callers = []
+          for f in scripts.glob("*.py"):
+              if f.name == "store.py":
+                  continue
+              if re.search(r"\bappend_decision\s*\(", f.read_text()):
+                  callers.append(f.name)
+          if callers:
+              print(f"append_decision is called from {callers} - the scan must not write to the scanned repo")
+              sys.exit(1)
+          print("OK: no scan-path caller of append_decision")
+          PY
+
+  tests:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the tested floor; 3.13 the current ceiling.
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        # pytest only runs the tests; the code under test is stdlib-only.
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run test suite
+        working-directory: skills/dovetail
+        # The suites build throwaway git repositories in temp dirs, so a real
+        # git identity has to exist for commits to succeed on a clean runner.
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          python -m pytest tests/ -v -p no:cacheprovider
+
+  dogfood:
+    name: dovetail scans its own repository
+    runs-on: ubuntu-latest
+    steps:
+      # A coherence checker whose own repository is incoherent has refuted
+      # itself. Full history because --since resolves refs from it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Scan this repository
+        run: python3 skills/dovetail/scripts/scan.py . --format github --fail-on high
+
+  install:
+    name: install.sh works end to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Claude install symlinks the skill
+        run: |
+          set -e
+          ./install.sh
+          test -L "$HOME/.claude/skills/dovetail"
+          test -f "$HOME/.claude/skills/dovetail/SKILL.md"
+          echo "OK: Claude install"
+
+      - name: Codex install rewrites the skill path
+        run: |
+          set -e
+          ./install-codex.sh
+          test -f "$HOME/.codex/skills/dovetail/SKILL.md"
+          if grep -q 'CLAUDE_SKILL_DIR' "$HOME/.codex/skills/dovetail/SKILL.md"; then
+            echo "ERROR: \${CLAUDE_SKILL_DIR} survived the Codex rewrite"
+            exit 1
+          fi
+          test -L "$HOME/.codex/skills/dovetail/scripts"
+          echo "OK: Codex install"
+
+      - name: The installed skill actually runs
+        run: |
+          set -e
+          python3 "$HOME/.claude/skills/dovetail/scripts/scan.py" . --format json > /dev/null
+          echo "OK: scan runs from the install path"
