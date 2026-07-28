@@ -52,8 +52,10 @@ class TestRunScan(ScanCase):
 
     def test_result_has_every_required_key(self):
         result = run_scan(self.repo)
-        self.assertEqual(set(result),
-                         {'findings', 'suppressed', 'counts', 'failed_checks'})
+        self.assertEqual(
+            set(result),
+            {'findings', 'suppressed', 'counts', 'failed_checks',
+             'profile', 'file_count', 'edge_count'})
 
     def test_counts_by_severity(self):
         result = run_scan(self.repo)

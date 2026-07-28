@@ -24,6 +24,8 @@ import cochange
 import convcheck
 import exactcheck
 import graphcheck
+import plugins as plugin_runner
+from config import ConfigError, check_enabled, load_config
 from discover import discover
 from gitmeta import changed_since, is_git_repo, rev_exists
 from refgraph import build_graph
@@ -41,6 +43,11 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     if not is_git_repo(root):
         raise ValueError(f'not a git repository: {repo_root}')
 
+    # A present-but-invalid config raises rather than falling back: silently
+    # ignoring it would hide findings the user meant to see.
+    config = load_config(root)
+    ignore = list(ignore or []) + list(config['ignore'])
+
     inventory = discover(root, ignore=ignore)
     graph = build_graph(root, inventory)
 
@@ -48,10 +55,20 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     failed_checks: list[str] = []
     for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
                   + convcheck.ALL_CHECKS + cochange.ALL_CHECKS):
+        if not check_enabled(config, check.__name__):
+            continue
         try:
             findings.extend(check(inventory, graph))
         except Exception:  # a broken check must not take down the run
             failed_checks.append(check.__name__)
+
+    # Repo-local checks last, so a plugin can rely on everything above having
+    # run. A plugin that raises is named, not fatal.
+    for result in plugin_runner.run_plugins(root, inventory, graph):
+        if result.error:
+            failed_checks.append(f'plugin:{result.name} ({result.error})')
+        else:
+            findings.extend(result.findings)
 
     if since:
         if not is_git_repo(root) or not rev_exists(root, since):
@@ -80,7 +97,10 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
         counts[finding['severity']] += 1
 
     return {'findings': kept, 'suppressed': suppressed,
-            'counts': counts, 'failed_checks': failed_checks}
+            'counts': counts, 'failed_checks': failed_checks,
+            'profile': config['profile'],
+            'file_count': len(inventory['files']),
+            'edge_count': len(graph['edges'])}
 
 
 def _escape_data(message: str) -> str:
@@ -197,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         result = run_scan(args.repo, ignore=args.ignore, since=args.since)
+    except ConfigError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
     except ValueError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2

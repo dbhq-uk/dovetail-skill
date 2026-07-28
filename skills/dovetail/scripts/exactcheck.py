@@ -605,7 +605,7 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
 
     findings: list[dict] = []
     for path, name, line in definitions:
-        pattern = re.compile(r'(?<![\w.])' + re.escape(name) + r'(?![\w])')
+        pattern = re.compile(r'(?<![\w])' + re.escape(name) + r'(?![\w])')
         used = False
         for other_path, text in corpus:
             if other_path == path:
