@@ -12,7 +12,9 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from gitmeta import changed_since, is_git_repo, last_commit_times, list_files  # noqa: E402
+from gitmeta import (  # noqa: E402
+    changed_since, is_git_repo, last_commit_times, list_files, rev_exists,
+)
 
 
 def git(repo: str, *args: str) -> str:
@@ -153,6 +155,23 @@ class TestChangedSince(GitRepoCase):
             self.assertEqual(changed_since(path, 'main'), set())
         finally:
             os.unlink(path)
+
+
+class TestRevExists(GitRepoCase):
+    def test_true_for_a_real_ref(self):
+        write(self.repo, 'a.md', 'a')
+        git(self.repo, 'add', 'a.md')
+        git(self.repo, 'commit', '-qm', 'a')
+        self.assertTrue(rev_exists(self.repo, 'HEAD'))
+
+    def test_false_for_an_unknown_ref(self):
+        write(self.repo, 'a.md', 'a')
+        git(self.repo, 'add', 'a.md')
+        git(self.repo, 'commit', '-qm', 'a')
+        self.assertFalse(rev_exists(self.repo, 'no-such-ref'))
+
+    def test_false_in_a_repo_with_no_commits(self):
+        self.assertFalse(rev_exists(self.repo, 'HEAD'))
 
 
 if __name__ == '__main__':
