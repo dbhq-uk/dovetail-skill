@@ -20,6 +20,7 @@ import json
 import os
 import sys
 
+import exactcheck
 import graphcheck
 from discover import discover
 from gitmeta import changed_since, is_git_repo, rev_exists
@@ -43,7 +44,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
 
     findings: list[dict] = []
     failed_checks: list[str] = []
-    for check in graphcheck.ALL_CHECKS:
+    for check in graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS:
         try:
             findings.extend(check(inventory, graph))
         except Exception:  # a broken check must not take down the run

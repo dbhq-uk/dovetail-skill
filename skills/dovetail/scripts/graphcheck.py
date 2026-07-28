@@ -139,6 +139,22 @@ TEST_FILE_EXTS = frozenset({
     '.sh', '.php', '.cs', '.scala', '.ex', '.exs',
 })
 NEAR_DUPLICATE_MIN_BYTES = 200
+
+# Word-shingle width for the near-duplicate prefilter, and the Jaccard floor a
+# pair must clear before difflib is run on it. The floor is well below the
+# similarity actually being tested for: it exists to discard hopeless pairs
+# cheaply, not to decide anything.
+SHINGLE_SIZE = 5
+SHINGLE_JACCARD_FLOOR = 0.30
+
+# difflib.ratio() is quadratic in content length, so a handful of very large
+# documents that survive the prefilters can still dominate a whole scan. The
+# similarity for a pair is therefore computed over at most this many characters.
+# Truncation only ever affects files larger than the cap, and a document pair
+# that is 95% identical across its first 40k characters is a near-duplicate by
+# any useful definition. Bounding this is what keeps the promise that a scan
+# takes seconds.
+MAX_COMPARE_CHARS = 40_000
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
 
@@ -233,6 +249,29 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
 
     seen_hashes = {e['path']: e['sha256'] for e in candidates}
 
+    # Shingle sets for a cheap Jaccard prefilter. difflib.ratio() is quadratic
+    # in the length of the *content*, so on a documentation repository with a
+    # few thousand-line files it is the whole cost of a scan: profiling this
+    # check against a 448-file repo had it still running after ten minutes,
+    # while every other check finished in under a second.
+    #
+    # Jaccard over word-shingles is set arithmetic - linear, and it bounds the
+    # real similarity from above closely enough to discard almost every pair
+    # before difflib is constructed. The threshold below is deliberately far
+    # looser than the similarity being tested for, because a prefilter that
+    # discards a genuine near-duplicate is a silent false negative, which is
+    # worse than the work it saves.
+    shingles: dict[str, frozenset[int]] = {}
+    for path, body in bodies.items():
+        words = body.split()
+        if len(words) < SHINGLE_SIZE:
+            shingles[path] = frozenset({hash(body)})
+            continue
+        shingles[path] = frozenset(
+            hash(' '.join(words[i:i + SHINGLE_SIZE]))
+            for i in range(len(words) - SHINGLE_SIZE + 1)
+        )
+
     # `real_quick_ratio() >= threshold` is algebraically `r >= t/(2-t)` where
     # r is the length ratio. Checking it directly costs O(1) and avoids
     # building a matcher for hopeless pairs. Note t/(2-t), NOT t: requiring
@@ -246,7 +285,7 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
     for i, left in enumerate(paths):
         # set_seq2 is the cached side in difflib, so it belongs in the outer
         # loop: the index over `left` is built once and reused for every right.
-        matcher.set_seq2(bodies[left])
+        matcher.set_seq2(bodies[left][:MAX_COMPARE_CHARS])
         for right in paths[i + 1:]:
             if seen_hashes[left] == seen_hashes[right]:
                 continue  # exact_duplicates owns this pair
@@ -256,7 +295,12 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
             if longer == 0 or shorter / longer < min_length_ratio:
                 continue
 
-            matcher.set_seq1(b)
+            sl, sr = shingles[left], shingles[right]
+            union = len(sl | sr)
+            if union and len(sl & sr) / union < SHINGLE_JACCARD_FLOOR:
+                continue
+
+            matcher.set_seq1(b[:MAX_COMPARE_CHARS])
             if matcher.quick_ratio() < threshold:
                 continue
             ratio = matcher.ratio()
