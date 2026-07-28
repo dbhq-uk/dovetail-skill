@@ -20,6 +20,8 @@ import json
 import os
 import sys
 
+import cochange
+import convcheck
 import exactcheck
 import graphcheck
 from discover import discover
@@ -44,7 +46,8 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
 
     findings: list[dict] = []
     failed_checks: list[str] = []
-    for check in graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS:
+    for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
+                  + convcheck.ALL_CHECKS + cochange.ALL_CHECKS):
         try:
             findings.extend(check(inventory, graph))
         except Exception:  # a broken check must not take down the run
