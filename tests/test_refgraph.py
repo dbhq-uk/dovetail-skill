@@ -251,6 +251,41 @@ class TestPythonImports(GraphCase):
         self.assertEqual([e for e in g['edges'] if e['kind'] == 'import'], [])
 
 
+class TestKindScoping(GraphCase):
+    def test_js_import_regex_does_not_run_on_python(self):
+        # refgraph's own docstring describes JS import syntax; that text must
+        # not become an edge when the file is Python.
+        write(self.repo, 'scripts/a.py',
+              '"""Docs: from \'./x.js\' / require(\'./x.js\') are JS forms."""\n')
+        write(self.repo, 'scripts/x.js', 'module.exports = 1;\n')
+        g = self.graph(['scripts/a.py', 'scripts/x.js'])
+        self.assertEqual([e for e in g['edges'] if e['kind'] == 'import'], [])
+
+    def test_markdown_link_regex_does_not_run_on_python(self):
+        write(self.repo, 'scripts/a.py', '# see [setup](docs/setup.md)\n')
+        write(self.repo, 'docs/setup.md', '# Setup\n')
+        g = self.graph(['scripts/a.py', 'docs/setup.md'])
+        self.assertEqual([e for e in g['edges'] if e['kind'] == 'md_link'], [])
+
+    def test_python_path_literal_still_captured(self):
+        # A genuine data-file reference from Python must still create an edge.
+        write(self.repo, 'scripts/a.py', "open('data/config.json')\n")
+        write(self.repo, 'data/config.json', '{}\n')
+        g = self.graph(['scripts/a.py', 'data/config.json'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'path_literal')['dst'],
+                         'data/config.json')
+
+    def test_bare_import_regex_does_not_run_on_markdown(self):
+        write(self.repo, 'README.md', "Use `from helper import run` in your code.\n")
+        write(self.repo, 'helper.py', 'def run(): pass\n')
+        g = self.graph(['README.md', 'helper.py'])
+        self.assertEqual([e for e in g['edges'] if e['dst'] == 'helper.py'], [])
+
+    def test_version_range_is_not_a_path(self):
+        write(self.repo, 'README.md', 'Supports Python 3.11/3.12 and later.\n')
+        self.assertEqual(self.graph(['README.md'])['edges'], [])
+
+
 class TestInbound(GraphCase):
     def test_inbound_lists_referencing_files(self):
         write(self.repo, 'a.md', '[x](target.md)\n')

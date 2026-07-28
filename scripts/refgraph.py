@@ -17,6 +17,10 @@ Recognised edge kinds:
   import        from './x.js' / require('./x.js') quoted specifiers (JS/TS),
                 and Python imports resolved via ast
   path_literal  a bare slash-bearing path with an extension, in prose or code
+
+Each kind is only searched for in files where it can mean something: a
+quoted JS specifier or an HTML attribute has no meaning in Python source, and
+a bare `import` has no meaning in markdown. See `_kinds_for`.
 """
 
 from __future__ import annotations
@@ -36,13 +40,42 @@ _MD_LINK = re.compile(r'(!?)\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)')
 _MD_REFDEF = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?')
 _HTML_ATTR = re.compile(r'\b(?:src|href)\s*=\s*["\']([^"\']+)["\']')
 _IMPORT = re.compile(r"""(?:from|require\s*\(|import)\s*['"]([^'"]+)['"]""")
-_PATH_LITERAL = re.compile(r'(?<![\w/])((?:\.{1,2}/)?(?:[\w.-]+/)+[\w.-]+\.\w+)')
+_PATH_LITERAL = re.compile(r'(?<![\w/])((?:\.{1,2}/)?(?:[\w.-]+/)+[\w.-]+\.\w*[A-Za-z]\w*)')
 
 # TypeScript sources compile to these specifiers, so an import of './a.js'
 # resolves to a.ts when a.js does not exist.
 _JS_TO_TS = {'.js': ['.ts', '.tsx'], '.jsx': ['.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts']}
 
 _EXTERNAL = re.compile(r'^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)')
+
+# Which edge kinds are meaningful in which sources. Running a JS-specifier or
+# markdown-link regex over Python source fabricates edges out of docstrings and
+# comments — a false edge makes a dead file look alive and hides a real orphan.
+_MARKDOWN_KINDS = frozenset({'md_link', 'md_image', 'md_refdef', 'html', 'path_literal'})
+_JS_KINDS = frozenset({'import', 'path_literal'})
+_MARKUP_KINDS = frozenset({'html', 'path_literal'})
+# Python import edges come from `ast`, not from `_scan_line`; `path_literal`
+# still applies so a real reference like open('data/config.json') is captured.
+_PYTHON_KINDS = frozenset({'path_literal'})
+_DEFAULT_KINDS = frozenset({'path_literal'})
+
+_MARKDOWN_EXTS = frozenset({'.md', '.markdown'})
+_JS_EXTS = frozenset({'.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'})
+_MARKUP_EXTS = frozenset({'.html', '.htm', '.svg'})
+
+
+def _kinds_for(path: str) -> frozenset:
+    """Edge kinds worth looking for in this file's language."""
+    ext = posixpath.splitext(path.lower())[1]
+    if ext in _MARKDOWN_EXTS:
+        return _MARKDOWN_KINDS
+    if ext == '.py':
+        return _PYTHON_KINDS
+    if ext in _JS_EXTS:
+        return _JS_KINDS
+    if ext in _MARKUP_EXTS:
+        return _MARKUP_KINDS
+    return _DEFAULT_KINDS
 
 
 def _is_external(target: str) -> bool:
@@ -64,6 +97,15 @@ def _resolve(src: str, target: str, known: set[str]) -> str | None:
     for alt_ext in _JS_TO_TS.get(ext, []):
         if stem + alt_ext in known:
             return stem + alt_ext
+
+    # A bare target (no explicit './' or '../' prefix) may be written relative
+    # to the repo root instead of the referencing file's own directory --
+    # e.g. a Python `open('data/config.json')` call resolves against the
+    # process's working directory, not against the importing module's folder.
+    if not target.startswith(('/', './', '../')):
+        root_candidate = posixpath.normpath(target)
+        if not root_candidate.startswith('..') and root_candidate in known:
+            return root_candidate
     return None
 
 
@@ -189,6 +231,8 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
         if path.lower().endswith(('.md', '.markdown')):
             headings[path] = heading_slugs(body)
 
+        allowed = _kinds_for(path)
+
         in_fence = False
         for lineno, line in enumerate(body.split('\n'), start=1):
             if _FENCE.match(line):
@@ -198,6 +242,8 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                 continue
 
             for kind, raw in _scan_line(line):
+                if kind not in allowed:
+                    continue
                 if _is_external(raw):
                     continue
                 path_part, anchor = _split_anchor(raw)
