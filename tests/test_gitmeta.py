@@ -111,13 +111,19 @@ class TestLastCommitTimes(GitRepoCase):
     def test_empty_paths_returns_empty_dict(self):
         self.assertEqual(last_commit_times(self.repo, []), {})
 
-    def test_non_repo_directory_returns_all_none_not_raises(self):
-        plain = tempfile.mkdtemp()
+    def test_missing_directory_returns_all_none_not_raises(self):
+        # A nonexistent cwd raises FileNotFoundError, not CalledProcessError.
+        missing = os.path.join(tempfile.mkdtemp(), 'nope', 'deeper')
+        self.assertEqual(last_commit_times(missing, ['a.md']), {'a.md': None})
+
+    def test_file_as_repo_root_returns_all_none_not_raises(self):
+        # A cwd that is a file raises NotADirectoryError.
+        handle, path = tempfile.mkstemp()
+        os.close(handle)
         try:
-            # This should degrade gracefully rather than raise
-            self.assertEqual(last_commit_times(plain, ['a.md']), {'a.md': None})
+            self.assertEqual(last_commit_times(path, ['a.md']), {'a.md': None})
         finally:
-            shutil.rmtree(plain, ignore_errors=True)
+            os.unlink(path)
 
 
 class TestChangedSince(GitRepoCase):
@@ -134,12 +140,17 @@ class TestChangedSince(GitRepoCase):
     def test_unknown_ref_returns_empty_set(self):
         self.assertEqual(changed_since(self.repo, 'no-such-ref'), set())
 
-    def test_non_repo_directory_returns_empty_not_raises(self):
-        plain = tempfile.mkdtemp()
+    def test_missing_directory_returns_empty_not_raises(self):
+        missing = os.path.join(tempfile.mkdtemp(), 'nope', 'deeper')
+        self.assertEqual(changed_since(missing, 'main'), set())
+
+    def test_file_as_repo_root_returns_empty_not_raises(self):
+        handle, path = tempfile.mkstemp()
+        os.close(handle)
         try:
-            self.assertEqual(changed_since(plain, 'main'), set())
+            self.assertEqual(changed_since(path, 'main'), set())
         finally:
-            shutil.rmtree(plain, ignore_errors=True)
+            os.unlink(path)
 
 
 if __name__ == '__main__':
