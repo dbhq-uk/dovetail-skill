@@ -44,7 +44,7 @@ def glob_to_regex(glob: str) -> re.Pattern:
         else:
             out.append(re.escape(c))
         i += 1
-    return re.compile('^' + ''.join(out) + '$')
+    return re.compile('^' + ''.join(out) + r'\Z')
 
 
 def matches_any(path: str, globs: Iterable[str]) -> bool:

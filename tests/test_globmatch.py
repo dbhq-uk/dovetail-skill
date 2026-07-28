@@ -50,6 +50,12 @@ class TestGlobToRegex(unittest.TestCase):
         pat = glob_to_regex('*.py')
         self.assertFalse(pat.match('a.py.bak'))
 
+    def test_trailing_newline_does_not_match(self):
+        # Python's `$` also matches before a trailing newline; `\Z` does not.
+        # git ls-files can emit paths containing newlines, so this is reachable.
+        pat = glob_to_regex('*.py')
+        self.assertFalse(pat.match('a.py\n'))
+
 
 class TestMatchesAny(unittest.TestCase):
     def test_empty_globs_never_match(self):
