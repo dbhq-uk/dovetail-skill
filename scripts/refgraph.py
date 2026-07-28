@@ -82,7 +82,8 @@ def _is_external(target: str) -> bool:
     return bool(_EXTERNAL.match(target))
 
 
-def _resolve(src: str, target: str, known: set[str]) -> str | None:
+def _resolve(src: str, target: str, known: set[str], *,
+             allow_root_fallback: bool = False) -> str | None:
     """Resolve a link target to a repo-relative path, or None."""
     if target.startswith('/'):
         candidate = target.lstrip('/')
@@ -98,11 +99,15 @@ def _resolve(src: str, target: str, known: set[str]) -> str | None:
         if stem + alt_ext in known:
             return stem + alt_ext
 
-    # A bare target (no explicit './' or '../' prefix) may be written relative
-    # to the repo root instead of the referencing file's own directory --
-    # e.g. a Python `open('data/config.json')` call resolves against the
-    # process's working directory, not against the importing module's folder.
-    if not target.startswith(('/', './', '../')):
+    # Deliberately restricted to path_literal: a bare markdown or HTML target
+    # is unambiguously relative to its own file, so when it does not resolve
+    # there it must be reported as a broken link, not silently redirected. A
+    # bare target in Python code (no explicit './' or '../' prefix) may be
+    # written relative to the repo root instead of the referencing file's own
+    # directory -- e.g. a Python `open('data/config.json')` call resolves
+    # against the process's working directory, not against the importing
+    # module's folder.
+    if allow_root_fallback and not target.startswith(('/', './', '../')):
         root_candidate = posixpath.normpath(target)
         if not root_candidate.startswith('..') and root_candidate in known:
             return root_candidate
@@ -174,8 +179,13 @@ def _resolve_py_module(src: str, dots: str, module: str, known: set[str]) -> str
     return None
 
 
-def _scan_line(line: str) -> list[tuple[str, str]]:
-    """Return (kind, raw_target) pairs found in one line."""
+def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
+    """Return (kind, raw_target) pairs found in one line.
+
+    Only runs the patterns whose kind is in `allowed`, so a disallowed kind
+    (e.g. a markdown link inside a Python file) can never consume a target
+    and thereby suppress a kind that is allowed there.
+    """
     found: list[tuple[str, str]] = []
     consumed: set[str] = set()
 
@@ -185,29 +195,36 @@ def _scan_line(line: str) -> list[tuple[str, str]]:
         consumed.add(target)
         consumed.add(target.partition('#')[0])
 
-    for bang, target in _MD_LINK.findall(line):
-        found.append(('md_image' if bang else 'md_link', target))
-        consume(target)
+    if 'md_link' in allowed or 'md_image' in allowed:
+        for bang, target in _MD_LINK.findall(line):
+            kind = 'md_image' if bang else 'md_link'
+            if kind in allowed:
+                found.append((kind, target))
+                consume(target)
 
-    match = _MD_REFDEF.match(line)
-    if match:
-        found.append(('md_refdef', match.group(1)))
-        consume(match.group(1))
+    if 'md_refdef' in allowed:
+        match = _MD_REFDEF.match(line)
+        if match:
+            found.append(('md_refdef', match.group(1)))
+            consume(match.group(1))
 
-    for target in _HTML_ATTR.findall(line):
-        if target not in consumed:
-            found.append(('html', target))
-            consume(target)
+    if 'html' in allowed:
+        for target in _HTML_ATTR.findall(line):
+            if target not in consumed:
+                found.append(('html', target))
+                consume(target)
 
-    for target in _IMPORT.findall(line):
-        if target not in consumed:
-            found.append(('import', target))
-            consume(target)
+    if 'import' in allowed:
+        for target in _IMPORT.findall(line):
+            if target not in consumed:
+                found.append(('import', target))
+                consume(target)
 
-    for target in _PATH_LITERAL.findall(line):
-        if target not in consumed:
-            found.append(('path_literal', target))
-            consume(target)
+    if 'path_literal' in allowed:
+        for target in _PATH_LITERAL.findall(line):
+            if target not in consumed:
+                found.append(('path_literal', target))
+                consume(target)
 
     return found
 
@@ -241,16 +258,15 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
             if in_fence:
                 continue
 
-            for kind, raw in _scan_line(line):
-                if kind not in allowed:
-                    continue
+            for kind, raw in _scan_line(line, allowed):
                 if _is_external(raw):
                     continue
                 path_part, anchor = _split_anchor(raw)
                 if not path_part:
                     dst = path  # pure `#anchor` — same document
                 else:
-                    dst = _resolve(path, path_part, known)
+                    dst = _resolve(path, path_part, known,
+                                    allow_root_fallback=(kind == 'path_literal'))
                 edges.append({
                     'src': path, 'line': lineno, 'kind': kind,
                     'raw': raw, 'dst': dst, 'anchor': anchor,
