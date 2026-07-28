@@ -311,6 +311,58 @@ class TestKindScoping(GraphCase):
                          'data/config.json')
 
 
+class TestBarePackageSpecifiers(GraphCase):
+    def test_bare_package_specifier_creates_no_edge(self):
+        write(self.repo, 'src/App.jsx', "import React from 'react';\n")
+        self.assertEqual(self.graph(['src/App.jsx'])['edges'], [])
+
+    def test_scoped_package_specifier_creates_no_edge(self):
+        write(self.repo, 'src/a.ts', "import x from '@scope/pkg';\n")
+        self.assertEqual(self.graph(['src/a.ts'])['edges'], [])
+
+    def test_relative_specifier_still_creates_an_edge(self):
+        write(self.repo, 'src/a.ts', "import { x } from './b.js';\n")
+        write(self.repo, 'src/b.ts', 'export const x = 1;\n')
+        g = self.graph(['src/a.ts', 'src/b.ts'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'src/b.ts')
+
+
+class TestFenceTracking(GraphCase):
+    def test_nested_fence_does_not_desync_the_tracker(self):
+        write(self.repo, 'README.md',
+              '````\n```\n[x](docs/nope.md)\n```\n````\n\n[real](docs/a.md)\n')
+        write(self.repo, 'docs/a.md', '# A\n')
+        g = self.graph(['README.md', 'docs/a.md'])
+        kinds = [(e['kind'], e['raw']) for e in g['edges']]
+        self.assertEqual(kinds, [('md_link', 'docs/a.md')])
+
+    def test_indented_fence_beyond_three_spaces_is_not_a_fence(self):
+        write(self.repo, 'README.md', '     ```\n[x](docs/a.md)\n')
+        write(self.repo, 'docs/a.md', '# A\n')
+        g = self.graph(['README.md', 'docs/a.md'])
+        self.assertEqual([e['raw'] for e in g['edges'] if e['kind'] == 'md_link'],
+                         ['docs/a.md'])
+
+
+class TestPercentDecoding(GraphCase):
+    def test_percent_encoded_space_resolves(self):
+        write(self.repo, 'README.md', '[spaced](docs/my%20file.md)\n')
+        write(self.repo, 'docs/my file.md', '# Spaced\n')
+        g = self.graph(['README.md', 'docs/my file.md'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'md_link')
+        self.assertEqual(edge['dst'], 'docs/my file.md')
+        self.assertEqual(edge['raw'], 'docs/my%20file.md')
+        self.assertEqual(g['inbound']['docs/my file.md'], ['README.md'])
+
+    def test_literal_percent_in_a_filename_still_resolves(self):
+        write(self.repo, 'README.md', '[odd](docs/100%.md)\n')
+        write(self.repo, 'docs/100%.md', '# Odd\n')
+        g = self.graph(['README.md', 'docs/100%.md'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'md_link')['dst'],
+                         'docs/100%.md')
+
+
 class TestInbound(GraphCase):
     def test_inbound_lists_referencing_files(self):
         write(self.repo, 'a.md', '[x](target.md)\n')

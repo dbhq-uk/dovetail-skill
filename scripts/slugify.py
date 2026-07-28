@@ -21,6 +21,36 @@ _ATX = re.compile(r'^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$')
 _FENCE = re.compile(r'^ {0,3}((?:`{3,})|(?:~{3,}))')
 
 
+def fence_delimiter(line: str) -> str | None:
+    """The fence marker opening or closing a code block on this line, or None.
+
+    CommonMark: up to three leading spaces, and a closing fence must use the
+    same character and be at least as long as the opener.
+    """
+    match = _FENCE.match(line)
+    return match.group(1) if match else None
+
+
+def track_fence(fence: str | None, line: str) -> tuple[str | None, bool]:
+    """Update fence state for one line.
+
+    `fence` is the currently-open delimiter (or None if not inside a fence).
+    Returns `(new_fence, is_fence_line)`: `is_fence_line` is True when this
+    line is itself a fence marker (opening or closing) and should be skipped
+    rather than scanned for content. This is the single implementation of the
+    fence state machine — both `heading_slugs` and `refgraph` use it, so a
+    fix here (or a bug) cannot diverge between the two.
+    """
+    marker = fence_delimiter(line)
+    if marker is None:
+        return fence, False
+    if fence is None:
+        return marker, True
+    if marker[0] == fence[0] and len(marker) >= len(fence):
+        return None, True
+    return fence, True
+
+
 def slugify(heading_text: str) -> str:
     """Convert heading text to its GitHub anchor slug."""
     text = heading_text.strip().lower()
@@ -36,13 +66,8 @@ def heading_slugs(markdown: str) -> list[str]:
     fence: str | None = None   # the opening delimiter run, e.g. '```'
 
     for line in markdown.split('\n'):
-        fence_match = _FENCE.match(line)
-        if fence_match:
-            marker = fence_match.group(1)
-            if fence is None:
-                fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence):
-                fence = None
+        fence, is_fence_line = track_fence(fence, line)
+        if is_fence_line:
             continue
         if fence is not None:
             continue

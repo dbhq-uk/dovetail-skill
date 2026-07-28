@@ -30,12 +30,12 @@ import os
 import posixpath
 import re
 import sys
+from urllib.parse import unquote
 
-from slugify import heading_slugs
+from slugify import heading_slugs, track_fence
 
 TEXT_MODALITIES = {'text', 'vector_diagram'}
 
-_FENCE = re.compile(r'^\s*(```|~~~)')
 _MD_LINK = re.compile(r'(!?)\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)')
 _MD_REFDEF = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?')
 _HTML_ATTR = re.compile(r'\b(?:src|href)\s*=\s*["\']([^"\']+)["\']')
@@ -216,7 +216,10 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
 
     if 'import' in allowed:
         for target in _IMPORT.findall(line):
-            if target not in consumed:
+            # A bare specifier (no './', '../' or '/' prefix) names a package,
+            # not a path — e.g. `import React from 'react'`. Only relative or
+            # absolute specifiers are file references worth an edge.
+            if target not in consumed and target.startswith(('./', '../', '/')):
                 found.append(('import', target))
                 consume(target)
 
@@ -250,12 +253,12 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
 
         allowed = _kinds_for(path)
 
-        in_fence = False
+        fence: str | None = None
         for lineno, line in enumerate(body.split('\n'), start=1):
-            if _FENCE.match(line):
-                in_fence = not in_fence
+            fence, is_fence_line = track_fence(fence, line)
+            if is_fence_line:
                 continue
-            if in_fence:
+            if fence is not None:
                 continue
 
             for kind, raw in _scan_line(line, allowed):
@@ -265,8 +268,16 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                 if not path_part:
                     dst = path  # pure `#anchor` — same document
                 else:
-                    dst = _resolve(path, path_part, known,
+                    # A path containing a space must be percent-encoded to
+                    # survive `_MD_LINK`'s whitespace boundary — decode before
+                    # resolving. Fall back to the raw form so a literal '%'
+                    # in a filename (not a valid escape) still resolves.
+                    decoded = unquote(path_part)
+                    dst = _resolve(path, decoded, known,
                                     allow_root_fallback=(kind == 'path_literal'))
+                    if dst is None and decoded != path_part:
+                        dst = _resolve(path, path_part, known,
+                                        allow_root_fallback=(kind == 'path_literal'))
                 edges.append({
                     'src': path, 'line': lineno, 'kind': kind,
                     'raw': raw, 'dst': dst, 'anchor': anchor,
