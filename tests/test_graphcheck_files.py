@@ -110,12 +110,14 @@ class TestNearDuplicates(unittest.TestCase):
         os.makedirs(os.path.dirname(full) or self.repo, exist_ok=True)
         with open(full, 'w', encoding='utf-8') as fh:
             fh.write(text)
+        return len(text.encode('utf-8'))
 
     def test_reports_almost_identical_text(self):
         body = 'The quick brown fox jumps over the lazy dog. ' * 20
-        self.write('a.md', body + 'Extra sentence here.')
-        self.write('b.md', body + 'Extra sentence there.')
-        inventory = inv([entry('a.md', sha='1'), entry('b.md', sha='2')])
+        size_a = self.write('a.md', body + 'Extra sentence here.')
+        size_b = self.write('b.md', body + 'Extra sentence there.')
+        inventory = inv([entry('a.md', sha='1', size=size_a),
+                         entry('b.md', sha='2', size=size_b)])
         inventory['repo_root'] = self.repo
         found = near_duplicates(inventory, graph())
         self.assertEqual(len(found), 1)
@@ -124,16 +126,18 @@ class TestNearDuplicates(unittest.TestCase):
     def test_different_text_is_not_reported(self):
         # Lengths are deliberately close enough to clear the size prefilter, so
         # this exercises the real similarity comparison rather than the shortcut.
-        self.write('a.md', 'The cat sat on the mat in the sunny room. ' * 12)
-        self.write('b.md', 'A ship sailed across the wide blue sea now. ' * 12)
-        inventory = inv([entry('a.md', sha='1'), entry('b.md', sha='2')])
+        size_a = self.write('a.md', 'The cat sat on the mat in the sunny room. ' * 12)
+        size_b = self.write('b.md', 'A ship sailed across the wide blue sea now. ' * 12)
+        inventory = inv([entry('a.md', sha='1', size=size_a),
+                         entry('b.md', sha='2', size=size_b)])
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
 
     def test_exact_duplicates_are_left_to_the_exact_check(self):
-        self.write('a.md', 'identical content here' * 10)
-        self.write('b.md', 'identical content here' * 10)
-        inventory = inv([entry('a.md', sha='same'), entry('b.md', sha='same')])
+        size_a = self.write('a.md', 'identical content here ' * 20)
+        size_b = self.write('b.md', 'identical content here ' * 20)
+        inventory = inv([entry('a.md', sha='same', size=size_a),
+                         entry('b.md', sha='same', size=size_b)])
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
 
@@ -145,9 +149,10 @@ class TestNearDuplicates(unittest.TestCase):
 
     def test_very_different_lengths_are_skipped_by_the_prefilter(self):
         shared = 'Shared opening paragraph that both documents contain. ' * 8
-        self.write('a.md', shared)
-        self.write('b.md', shared + ('Much more content only in b. ' * 60))
-        inventory = inv([entry('a.md', sha='1'), entry('b.md', sha='2')])
+        size_a = self.write('a.md', shared)
+        size_b = self.write('b.md', shared + ('Much more content only in b. ' * 60))
+        inventory = inv([entry('a.md', sha='1', size=size_a),
+                         entry('b.md', sha='2', size=size_b)])
         inventory['repo_root'] = self.repo
         self.assertEqual(near_duplicates(inventory, graph()), [])
 
