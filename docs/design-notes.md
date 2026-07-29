@@ -53,3 +53,51 @@ A repository with existing drift cannot turn on a whole-repository check without
 ## Python 3.11+, standard library only
 
 No third-party dependencies at all, so there is nothing to install, no virtualenv, no lockfile to drift, and no supply chain beyond the interpreter. 3.11 is the floor.
+
+## The judgement layer
+
+Everything above describes the deterministic half. The other half is six
+reviewers, and the design rule governing them is a single sentence: **nothing
+reaches a model that Python can compute exactly.**
+
+That is why each rubric names the categories it must not report. A reviewer
+restating a check the exact layer already performed is offering a guess where
+there was a certainty, and it costs money to do it.
+
+### Sharding is not an optimisation
+
+Handing a reviewer a whole repository and one turn budget does not get the
+repository reviewed. It gets a few files read and the rest skipped in silence -
+and the output looks identical either way, which is what makes it dangerous.
+
+This was measured rather than assumed. On a 474-file repository each reviewer
+was receiving 172 files in one prompt and the judgement layer produced 24
+findings. Sharded into batches of 20, the same reviewers on the same repository
+produced 149. Nothing else changed.
+
+### Extraction and adjudication are different jobs
+
+Reading files is high-volume and near-mechanical; deciding whether two claims
+conflict is low-volume and high-judgement. Splitting them is what lets the
+expensive model see a handful of candidate clusters instead of a corpus, and it
+is why `claimscan.py` exists at all.
+
+### Validation is the boundary, not a formality
+
+A reviewer's output arrives from a model, so it is checked before it is
+believed:
+
+- the category must not be one the deterministic layer owns
+- a contradiction must carry evidence from both sides
+- **every quote must appear at the line it cites**
+
+The last one is the important one. A model that invents a plausible quote at a
+plausible line produces a finding indistinguishable from a true one, and it
+fired on the very first live run against a real repository.
+
+An unsound finding is dropped and named; the reviewer's other findings survive.
+The original design discarded the whole batch, on the theory that a reviewer
+producing one bad finding could not be trusted at all. That cost every finding
+from a reviewer whose remaining output was sound, and silently losing good
+findings is the worse failure.
+

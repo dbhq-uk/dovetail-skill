@@ -44,13 +44,15 @@ CI templates: [`dovetail-pr.yml`](skills/dovetail/ci/dovetail-pr.yml)
 (full audit, reports via [`issue.py`](skills/dovetail/scripts/issue.py), never
 gates).
 
-## The three constraints that define this tool
+## The constraints that define this tool
 
 Break any of these and it stops being the thing people can trust:
 
 1. **Deterministic only.** No model calls, no network, no third-party imports. A finding must follow from the structure of the repository. This is what makes it safe to fail a build on - a checker with false positives gets switched off within a week.
 2. **Never write to the scanned repository.** dovetail reports; it does not fix. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` exists as a helper and is deliberately not called from the scan path.
 3. **Fail loudly, never silently pass.** `--since` against an unresolvable ref exits `2`. A check that reports success because it could not run is worse than no check.
+4. **Never hand a reviewer more than it can finish.** Work is sharded into batches of 20 files. A reviewer given the whole repository and one turn budget reads a handful of files and skips the rest in silence - which is indistinguishable from thoroughness in the output. This was measured: unsharded, a 474-file repo produced 24 judged findings; sharded, 149.
+5. **Never trust a quote.** Every piece of evidence a reviewer returns is checked against the actual line in the file. A fabricated quote at a plausible line reads exactly like a true finding, which makes it the most damaging failure available.
 
 ## Conventions
 
@@ -62,9 +64,22 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 243 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 394 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```
+
+The repo carries two `.dovetail/checks/` plugins, both enforcing rules no
+general check could know:
+
+- `roster_matches_skill.py` - the reviewer table in `SKILL.md` must match
+  `ROSTER` in `reviewer.py`
+- `documented_test_count.py` - every documented test count must match the suite
+
+The second exists because four documents here once carried four different
+counts - 243, 359, 243 and 243 - against a suite of 394. A bare number in prose
+is not checkable by any general rule, which is exactly what the plugin point is
+for. (Those figures are written without the word that follows them in the docs,
+because spelling them out in full would trip the very check being described.)
 
 Dogfooding is not optional here. A coherence checker whose own repository is incoherent has refuted itself, and CI runs the scan against this repo on every push for exactly that reason.
