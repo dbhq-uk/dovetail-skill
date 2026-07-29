@@ -337,3 +337,31 @@ class OrphanLiveness(unittest.TestCase):
         self._write('GUIDE.md', 'unrelated prose\n')
         self.assertIn('docs/lonely.md', self._orphans())
 
+    def test_asset_referenced_by_absolute_web_path_is_live(self):
+        """Regression: /icons/icon-shield.webp names that file.
+
+        The liveness lookbehind excluded '/', so a filename inside a path never
+        matched - and every asset a site references by absolute web path read
+        as an orphan. Caught by disagreeing with upkeep on a real repo, where
+        upkeep was right.
+        """
+        self._write('public/icons/icon-shield.webp', 'binary-ish\n')
+        self._write('src/Proof.astro', 'const icons = ["/icons/icon-shield.webp"];\n')
+        self.assertNotIn('public/icons/icon-shield.webp', self._orphans())
+
+    def test_a_wholly_unreferenced_directory_is_one_finding(self):
+        """Regression: 13 unreferenced PDFs is one fact, not thirteen.
+
+        On a 474-file repo dovetail reported 123 orphans to upkeep's 5. The
+        detection was not worse - dovetail's list contained all of upkeep's -
+        but 123 separate findings is a list nobody reads.
+        """
+        for n in range(4):
+            self._write(f'docs/archive/old-{n}.md', f'archived {n}\n')
+        inv = discover(self.repo)
+        found = [f for f in orphans(inv, build_graph(self.repo, inv))
+                 if f['category'] == 'orphan' and len(f['evidence']) > 1]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(len(found[0]['evidence']), 4)
+        self.assertIn('docs/archive', found[0]['problem'])
+
