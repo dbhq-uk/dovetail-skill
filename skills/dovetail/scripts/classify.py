@@ -24,6 +24,11 @@ VECTOR = {'.svg', '.mmd', '.dot', '.puml', '.plantuml'}
 CODE = {
     '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.swift',
     '.py', '.go', '.rs', '.java', '.kt', '.rb', '.c', '.h', '.cpp', '.m', '.sh',
+    # Component-file formats. Omitting these classified 34 of 47 JavaScript-family
+    # files in a real repository as 'other', so the code reviewer never saw a
+    # single Astro component - the whole of that site's source was invisible to
+    # it. A component file is code by any useful definition.
+    '.astro', '.vue', '.svelte',
 }
 DOC = {'.md', '.markdown', '.txt', '.rst', '.adoc'}
 CONFIG = {'.yml', '.yaml', '.json', '.toml', '.plist', '.xml'}

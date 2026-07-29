@@ -56,7 +56,23 @@ RETRY_SUFFIX = (
 )
 # Reviewers are independent, so they overlap. Bounded because each one is a
 # subprocess holding a model connection, not because of local CPU.
-MAX_PARALLEL = 4
+MAX_PARALLEL = 6
+
+# Files handed to one reviewer call.
+#
+# This is the single most important number in the judgement layer. Handing a
+# reviewer the whole repository and one turn budget does not get the whole
+# repository reviewed - it gets a handful of files read and the rest ignored,
+# silently. On a 474-file repo each reviewer was receiving 172 files in one
+# prompt, and the result was shallow coverage that read like thoroughness.
+#
+# Sharding is what upkeep does and why it reads deeper: each of its reviewers
+# gets a disjoint slice and is told to review only those. Small batches cost
+# more calls, but each call can actually do its job.
+FILES_PER_BATCH = 20
+# Clusters are far cheaper to adjudicate than files are to read, so they batch
+# larger - but not unbounded, or the prompt hits ARG_MAX-class limits again.
+CLUSTERS_PER_BATCH = 25
 
 
 def rubric_path(name: str) -> str:
@@ -154,6 +170,26 @@ def _context_for(name: str, inventory: dict, graph: dict) -> dict:
     return {'files': docs}
 
 
+def _batches(context: dict) -> list[dict]:
+    """Split one reviewer's context into batches it can actually get through.
+
+    A reviewer handed 172 files reads a few of them. The same reviewer handed
+    nine batches of twenty reads all 172, because each call has a job it can
+    finish inside its turn budget.
+    """
+    if context.get('clusters') is not None:
+        clusters = context['clusters']
+        if not clusters:
+            return []
+        return [{'clusters': clusters[i:i + CLUSTERS_PER_BATCH]}
+                for i in range(0, len(clusters), CLUSTERS_PER_BATCH)]
+    files = context.get('files') or []
+    if not files:
+        return []
+    return [{'files': files[i:i + FILES_PER_BATCH]}
+            for i in range(0, len(files), FILES_PER_BATCH)]
+
+
 def dispatch(repo_root: str, profile: str = 'default',
              only: list[str] | None = None,
              timeout: int = DEFAULT_TIMEOUT) -> dict:
@@ -176,9 +212,17 @@ def dispatch(repo_root: str, profile: str = 'default',
     findings: list[dict] = []
     failed: list[str] = []
 
-    def run_one(name: str) -> tuple[str, list[dict] | None, str | None]:
+    jobs: list[tuple[str, dict, int, int]] = []
+    for name in names:
+        batches = _batches(_context_for(name, inventory, graph))
+        for index, batch in enumerate(batches, start=1):
+            jobs.append((name, batch, index, len(batches)))
+
+    def run_one(job: tuple[str, dict, int, int]) -> tuple[str, list[dict] | None, str | None]:
+        name, batch, index, total = job
+        label = name if total == 1 else f'{name} [{index}/{total}]'
         entry = roster[name]
-        prompt = build_prompt(name, root, _context_for(name, inventory, graph))
+        prompt = build_prompt(name, root, batch)
         rejected: list[str] = []
         last_error = None
 
@@ -193,7 +237,7 @@ def dispatch(repo_root: str, profile: str = 'default',
                     entry['model'], root, timeout=timeout)
             except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError,
                     OSError) as exc:
-                return name, None, f'{type(exc).__name__}: {exc}'[:400]
+                return label, None, f'{type(exc).__name__}: {exc}'[:400]
             try:
                 # rejected= makes this lenient: one unsound finding is dropped
                 # and named, rather than discarding the reviewer's good work.
@@ -203,31 +247,42 @@ def dispatch(repo_root: str, profile: str = 'default',
                 continue
             note = None
             if rejected:
-                note = (f'{name}: {len(rejected)} finding(s) dropped as unsound '
+                note = (f'{label}: {len(rejected)} finding(s) dropped as unsound '
                         f'- {rejected[0][:160]}')
-            return name, found, note
+            return label, found, note
 
-        return name, None, f'ValidationError after retry: {last_error}'[:400]
+        return label, None, f'ValidationError after retry: {last_error}'[:400]
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        for name, got, note in pool.map(run_one, names):
+        for label, got, note in pool.map(run_one, jobs):
             if got is None:
-                # A reviewer that fails is named, never silent: a partial
-                # result presented as complete is a lie about coverage.
-                failed.append(f'{name} ({note})')
+                # A batch that fails is named, never silent: a partial result
+                # presented as complete is a lie about coverage.
+                failed.append(f'{label} ({note})')
                 continue
             if note:
-                # Findings survived, but something was dropped - say so rather
-                # than let a quietly-reduced result read as a clean one.
                 failed.append(note)
             findings.extend(got)
+
+    # Batches overlap in what they can see, so the same finding can come back
+    # from more than one. The fingerprint is content-derived, so deduping on it
+    # is exact rather than a guess.
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for finding in findings:
+        if finding['id'] in seen:
+            continue
+        seen.add(finding['id'])
+        deduped.append(finding)
+    findings = deduped
 
     if escalation_enabled(profile):
         findings, escalation_failures = _escalate(root, findings, roster, timeout)
         failed.extend(escalation_failures)
 
     return {'findings': findings, 'failed_reviewers': failed,
-            'profile': profile, 'reviewers_run': names}
+            'profile': profile, 'reviewers_run': names,
+            'batches_run': len(jobs)}
 
 
 def _escalate(repo_root: str, findings: list[dict], roster: dict,

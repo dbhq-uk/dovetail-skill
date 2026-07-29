@@ -12,6 +12,7 @@ which are deterministic.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -197,6 +198,60 @@ class NoTriageInTheShim(Base):
             source = fh.read()
         self.assertIn('Never fails the build', source)
 
+
+
+
+class Sharding(Base):
+    """Reviewers get work in batches they can finish.
+
+    The structural defect behind dovetail losing a head-to-head on a 474-file
+    repo: each reviewer was handed 172 files and one turn budget, so it read a
+    handful and the rest went silently unreviewed. Sharding took judged
+    findings from 24 to 149 on the same repository.
+    """
+
+    def test_files_are_split_into_batches(self):
+        context = {'files': [f'doc{i}.md' for i in range(45)]}
+        batches = ci_dispatch._batches(context)
+        self.assertEqual(len(batches), 3)
+        self.assertEqual(sum(len(b['files']) for b in batches), 45)
+
+    def test_clusters_are_split_into_batches(self):
+        context = {'clusters': [{'entity': str(i)} for i in range(60)]}
+        batches = ci_dispatch._batches(context)
+        self.assertGreater(len(batches), 1)
+        self.assertEqual(sum(len(b['clusters']) for b in batches), 60)
+
+    def test_a_small_context_is_one_batch(self):
+        self.assertEqual(len(ci_dispatch._batches({'files': ['a.md']})), 1)
+
+    def test_empty_context_produces_no_work(self):
+        self.assertEqual(ci_dispatch._batches({'files': []}), [])
+        self.assertEqual(ci_dispatch._batches({'clusters': []}), [])
+
+    def test_batch_size_is_small_enough_to_be_read(self):
+        # A reviewer that cannot finish its batch is one reporting on a subset
+        # while appearing to report on all of it.
+        self.assertLessEqual(ci_dispatch.FILES_PER_BATCH, 25)
+
+    def test_identical_findings_from_two_batches_are_deduped(self):
+        # Batches overlap in what they can see, so the same finding comes back
+        # more than once. The fingerprint is content-derived, so this is exact.
+        payload = json.dumps([{
+            'category': 'staleness',
+            'problem': 'The doc describes behaviour the code no longer has.',
+            'evidence': [{'file': 'README.md', 'line': 1,
+                          'quote': 'requests time out after 30 seconds'}],
+            'suggestion': 'Update it.',
+            'severity': 'low',
+        }])
+        original = ci_dispatch.run_claude
+        ci_dispatch.run_claude = lambda *a, **k: payload
+        try:
+            result = ci_dispatch.dispatch(self.repo, only=['staleness'])
+        finally:
+            ci_dispatch.run_claude = original
+        self.assertEqual(len(result['findings']), 1)
 
 if __name__ == '__main__':
     unittest.main()
