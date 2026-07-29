@@ -119,10 +119,20 @@ def build_prompt(name: str, repo_root: str, context: dict) -> str:
 
 def run_claude(prompt: str, model: str, repo_root: str,
                timeout: int = DEFAULT_TIMEOUT) -> str:
-    """One headless `claude -p` call. Raises on any non-zero exit."""
+    """One headless `claude -p` call. Raises on any non-zero exit.
+
+    The prompt goes on **stdin**, not argv. Passing it as an argument works
+    until it does not: on a 474-file repository the contradiction reviewer's
+    prompt carries every candidate cluster as JSON, and the exec call died with
+    `OSError: [Errno 7] Argument list too long` - the kernel's ARG_MAX. That is
+    a limit that scales with the repository being audited, so the failure only
+    appears on exactly the repositories the tool is most useful on. stdin has
+    no such ceiling.
+    """
     result = subprocess.run(
-        ['claude', '-p', prompt, '--model', model,
+        ['claude', '-p', '--model', model,
          '--allowedTools', 'Read,Glob,Grep'],
+        input=prompt,
         cwd=repo_root, capture_output=True, text=True, timeout=timeout,
     )
     if result.returncode != 0:

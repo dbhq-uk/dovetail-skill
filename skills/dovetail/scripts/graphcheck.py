@@ -159,7 +159,13 @@ MAX_COMPARE_CHARS = 40_000
 
 # Filename-shaped tokens, for the orphan check's liveness evidence. Bounded
 # extensions so a sentence ending in a full stop does not read as a filename.
-_FILENAME_TOKEN = re.compile(r'(?<![\w/.-])([\w-]+\.[A-Za-z0-9]{1,8})(?![\w])')
+#
+# The lookbehind excludes word characters and dots but deliberately NOT '/'.
+# Excluding it was a real bug: a site referencing "/icons/icon-shield.webp"
+# names that file, and refusing to match after a slash meant every asset
+# referenced by an absolute web path read as an orphan. Found by disagreeing
+# with the prior tool, which had it right.
+_FILENAME_TOKEN = re.compile(r'(?<![\w.-])([\w-]+\.[A-Za-z0-9]{1,8})(?![\w])')
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
 
@@ -242,7 +248,7 @@ def orphans(inventory: dict, graph: dict) -> list[dict]:
     # these is what lets a repo keep its documents written for readers instead
     # of adding cross-links to satisfy this check.
     dynamic = dynamically_referenced(inventory)
-    findings = []
+    loose: list[dict] = []
     for entry in inventory['files']:
         path = entry['path']
         if _is_entry_point(path) or inbound.get(path):
@@ -251,6 +257,64 @@ def orphans(inventory: dict, graph: dict) -> list[dict]:
             continue  # named by another file; known and used, just not linked
         if path in dynamic:
             continue  # loaded at runtime by a constructed path
+        loose.append(entry)
+
+    return _group_orphans(inventory, loose)
+
+
+# A directory where most files are unreferenced is one fact, not N facts. Below
+# this share, the loose files are individually interesting; at or above it, the
+# directory itself is the finding.
+DIRECTORY_ORPHAN_SHARE = 0.6
+DIRECTORY_ORPHAN_MIN = 3
+
+
+def _group_orphans(inventory: dict, loose: list[dict]) -> list[dict]:
+    """Report a wholly-unreferenced directory once, not once per file.
+
+    Head-to-head against the prior tool on a 474-file repository: dovetail reported 123
+    orphans across 49 directories, the prior tool reported 5. Dovetail's list contained
+    every one of the prior tool's, so the detection was not worse - the *reporting*
+    was. Thirteen separate findings for thirteen unreferenced insurance PDFs is
+    thirteen things nobody reads; 'this directory of 13 files is unreferenced'
+    is one thing somebody acts on.
+
+    Recall is unchanged - every file is still named in the evidence.
+    """
+    by_directory: dict[str, list[dict]] = {}
+    for entry in loose:
+        by_directory.setdefault(posixpath.dirname(entry['path']), []).append(entry)
+
+    total_in_directory: dict[str, int] = {}
+    for entry in inventory['files']:
+        directory = posixpath.dirname(entry['path'])
+        total_in_directory[directory] = total_in_directory.get(directory, 0) + 1
+
+    findings: list[dict] = []
+    individual: list[dict] = []
+    for directory, entries in sorted(by_directory.items()):
+        total = total_in_directory.get(directory, len(entries))
+        share = len(entries) / total if total else 1.0
+        if (directory and len(entries) >= DIRECTORY_ORPHAN_MIN
+                and share >= DIRECTORY_ORPHAN_SHARE):
+            evidence = [{'file': e['path'], 'line': 1,
+                         'quote': 'no inbound references'} for e in entries]
+            findings.append(make_finding(
+                source='graph',
+                category='orphan',
+                problem=(f'Nothing references {len(entries)} of the {total} '
+                         f'files in {directory}/.'),
+                evidence=evidence,
+                suggestion=('Link the directory from somewhere, or remove it if '
+                            'it is no longer needed. Listed individually below.'),
+                severity='low',
+                claim=f'orphan-dir:{directory}',
+            ))
+        else:
+            individual.extend(entries)
+
+    for entry in individual:
+        path = entry['path']
         findings.append(make_finding(
             source='graph',
             category='orphan',
