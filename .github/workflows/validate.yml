@@ -21,11 +21,14 @@ jobs:
           done < <({ find . -maxdepth 1 -name '*.sh'; find skills -name '*.sh'; })
           exit $fail
 
-      - name: Check the CI template users copy is valid YAML
-        # This file is shipped for people to paste into their own repository.
-        # A broken one fails in someone else's build, where it is far more
-        # confusing than it would be here.
-        run: python3 -c "import yaml,sys; yaml.safe_load(open('skills/dovetail/ci/dovetail-pr.yml')); print('CI template OK')"
+      - name: The CI templates users copy are valid YAML
+        # These are shipped for people to paste into their own repositories. A
+        # broken one fails in someone else's build, where it is far more
+        # confusing to debug than it would be here.
+        run: |
+          for f in skills/dovetail/ci/*.yml; do
+            python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1])); print(sys.argv[1], 'OK')" "$f"
+          done
 
       - name: Check SKILL.md frontmatter
         run: |
@@ -145,6 +148,22 @@ jobs:
 
       - name: Scan this repository
         run: python3 skills/dovetail/scripts/scan.py . --format github --fail-on high
+
+      # The repo-local plugin is part of the scan here, and a plugin that fails
+      # to load is reported rather than fatal - which would make it easy to
+      # miss. Assert it actually ran.
+      - name: The repo-local plugin loaded
+        run: |
+          python3 skills/dovetail/scripts/scan.py . --format json > /tmp/scan.json
+          python3 - <<'EOF'
+          import json, sys
+          failed = json.load(open('/tmp/scan.json'))['failed_checks']
+          bad = [f for f in failed if f.startswith('plugin:')]
+          if bad:
+              print(f'::error::repo-local plugin failed: {bad}')
+              sys.exit(1)
+          print('OK: no plugin failures')
+          EOF
 
   install:
     name: install.sh works end to end

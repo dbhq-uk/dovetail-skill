@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+from discover import discover  # noqa: E402
+from refgraph import build_graph  # noqa: E402
 from graphcheck import (  # noqa: E402
     ALL_CHECKS, exact_duplicates, near_duplicates, orphans, translation_lag,
 )
@@ -289,3 +292,76 @@ class TestAllChecks(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OrphanLiveness(unittest.TestCase):
+    """A file named by another file is not an orphan, even without a link.
+
+    Regression from the head-to-head against upkeep on a real repository:
+    dovetail reported 18 orphans where upkeep reported 1. The graph only calls
+    something a reference if it carries a slash, which is right for reporting a
+    broken link and wrong for orphan detection - a docs table listing
+    `citation_manager.py` by name proves the file is known and used.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.repo = self._tmp.name
+        subprocess.run(['git', 'init', '-q'], cwd=self.repo, check=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, rel, body):
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(body)
+
+    def _orphans(self):
+        inv = discover(self.repo)
+        return {f['evidence'][0]['file']
+                for f in orphans(inv, build_graph(self.repo, inv))}
+
+    def test_bare_basename_mention_is_liveness(self):
+        self._write('scripts/citation_manager.py', 'x = 1\n')
+        self._write('GUIDE.md', 'Run `citation_manager.py` to build the list.\n')
+        self.assertNotIn('scripts/citation_manager.py', self._orphans())
+
+    def test_a_file_naming_itself_proves_nothing(self):
+        self._write('docs/lonely.md', 'This is lonely.md and nothing links here.\n')
+        self.assertIn('docs/lonely.md', self._orphans())
+
+    def test_genuinely_unmentioned_file_is_still_an_orphan(self):
+        self._write('docs/lonely.md', 'nothing points at this\n')
+        self._write('GUIDE.md', 'unrelated prose\n')
+        self.assertIn('docs/lonely.md', self._orphans())
+
+    def test_asset_referenced_by_absolute_web_path_is_live(self):
+        """Regression: /icons/icon-shield.webp names that file.
+
+        The liveness lookbehind excluded '/', so a filename inside a path never
+        matched - and every asset a site references by absolute web path read
+        as an orphan. Caught by disagreeing with upkeep on a real repo, where
+        upkeep was right.
+        """
+        self._write('public/icons/icon-shield.webp', 'binary-ish\n')
+        self._write('src/Proof.astro', 'const icons = ["/icons/icon-shield.webp"];\n')
+        self.assertNotIn('public/icons/icon-shield.webp', self._orphans())
+
+    def test_a_wholly_unreferenced_directory_is_one_finding(self):
+        """Regression: 13 unreferenced PDFs is one fact, not thirteen.
+
+        On a 474-file repo dovetail reported 123 orphans to upkeep's 5. The
+        detection was not worse - dovetail's list contained all of upkeep's -
+        but 123 separate findings is a list nobody reads.
+        """
+        for n in range(4):
+            self._write(f'docs/archive/old-{n}.md', f'archived {n}\n')
+        inv = discover(self.repo)
+        found = [f for f in orphans(inv, build_graph(self.repo, inv))
+                 if f['category'] == 'orphan' and len(f['evidence']) > 1]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(len(found[0]['evidence']), 4)
+        self.assertIn('docs/archive', found[0]['problem'])
+
