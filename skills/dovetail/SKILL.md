@@ -85,6 +85,42 @@ Always show the exact/judgement split, always show the suppressed count. Nothing
 
 Order by **blast radius, then severity, then confidence**. Root causes before symptoms, so fixing one visibly shrinks the queue.
 
+### One finding, one question box
+
+Render the finding as markdown, then ask for the decision with `AskUserQuestion`. The markdown carries the detail - quotes, diffs, blast radius - because the box cannot hold it. The box carries the choice and nothing else.
+
+Never put two findings in one box, and never ask for a decision in prose when the box is available. A typed `fix` is a verb the user has to remember; an option is one they can see.
+
+Every box:
+
+- `header` - the category, truncated to 12 characters (`broken_link`, `contradictn`)
+- `question` - the decision itself, phrased so it can be answered without scrolling back up to the evidence
+- `multiSelect: false`
+- two to four options, most likely first, each with a `description` saying what actually happens to the files
+- **never add an "Other" option.** It is supplied automatically, and spending an option on "something else" wastes a quarter of the box
+
+`edit`, `intentional <reason>`, `explain` and `quit` arrive as free text through "Other". Read what the user typed and act on it - do not re-ask a question they have already answered.
+
+### Recommending an option
+
+Where the evidence names a winner, say so. Put that option **first** and append `(Recommended)` to its label. At most one option per box, ever.
+
+A recommendation is a claim, so it carries its grounds: the `description` must say what makes it the answer, in the repository's own terms - which file is newer, which side the code agrees with, how many documents cite each value. "Best practice" is not grounds. If the description cannot name the evidence, the recommendation has not been earned.
+
+Recommend when:
+
+- the finding is **exact** and the fix is mechanical - there is nothing to argue about, so leaving the box unmarked is false modesty
+- the finding is **judged**, `ssot_direction` names a side, and the reviewer returned `confidence: high`
+
+Do **not** recommend when:
+
+- `ssot_direction` is `uncertain` - this is the case the whole conversation exists for
+- the reviewer returned `confidence: low`, or the finding was escalated and the escalation disagreed
+- the fix **deletes** anything
+- the options are not comparable - one edits docs, another edits code, a third says both are fine. That is a question about intent, and only the user holds it
+
+An unmarked box is a legitimate, common output. A recommendation on every finding trains the user to accept the first option without reading, which costs more than it saves the first time dovetail is confidently wrong.
+
 ### Rendering an exact finding
 
 Terse. There is nothing to argue about.
@@ -99,13 +135,27 @@ README.md:40 documents --out, but the script has no such flag.
 Fix: rename the flag in README.md:40 to --output
   - `--out FILE      write the report here`
   + `--output FILE   write the report here`
-
-fix · edit · skip · intentional <why> · explain · quit
 ```
+
+Then the box:
+
+```
+header    flag_drift
+question  Rename --out to --output in README.md:40?
+options   Apply the fix (Recommended)
+                              scripts/run.py:12 is the only definition of the
+                              flag, so the doc is the side that is wrong.
+          Skip for now        Stays in the queue and comes back next run.
+          Mark intentional    Recorded in the ledger. Never surfaces again.
+```
+
+Where a batch class is live, the first finding of that class gets a fourth option - `Fix all 9 in this class` - with the combined diff shown above the box.
+
+An option that records a permanent ledger entry must carry the reason with it. Where the reason is obvious from the repository, put it in the option label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in a single follow-up box. Never invent a reason to avoid the follow-up: a ledger full of guessed justifications is worse than one with gaps.
 
 ### Rendering a judged finding
 
-Show the model and confidence. Contradictions **end in a question**, because the right answer is not knowable from the text alone - that is the whole reason this is a conversation and not a report.
+Show the model and confidence. Here the options **are** the candidate resolutions, not `fix`/`skip` - the right answer is not knowable from the text alone, which is the whole reason this is a conversation and not a report.
 
 ```
 [3/9] contradiction · high · judged (opus, high confidence)
@@ -117,27 +167,41 @@ Two documents disagree about the request timeout.
 
 Blast radius: 2 further docs cross-reference this value
   docs/ja/config.md:24 · docs/troubleshooting.md:112
-
-The code says 30. Which is it?
-  1  config.md is stale → change it to 30s (and the 2 docs above)
-  2  the code is wrong → 60s is intended, change src/client.py
-  3  both correct - different timeouts, badly named → record why
-  4  something else - tell me
 ```
 
-Never present a guess as a decision. Where `ssot_direction` is `uncertain`, ask.
+Then the box:
+
+```
+header    contradictn
+question  The code says 30. Which is right?
+options   config.md is stale (Recommended)
+                                README.md and src/client.py:31 both say 30, and
+                                config.md:24 is the older of the two documents.
+                                Change it to 30s, plus the 2 docs that cite it.
+          The code is wrong     60s is intended. Change src/client.py:31.
+          Both are correct      Different timeouts, badly named. Record why.
+```
+
+The recommendation is earned here: `ssot_direction` names the stale side, two independent sources agree against it, and the reviewer returned high confidence. Strip the mark and the ordering the moment any of those three fails - a contradiction where the code is silent and both documents are the same age gets an unmarked, genuinely open box.
+
+"Other" already covers "something else - tell me", so it never occupies an option.
+
+Never present a guess as a decision, and never let the option order imply a verdict the evidence does not support.
 
 ### Actions
 
-| Action | Effect |
-|---|---|
-| `fix` | apply the proposed edit |
-| `edit` | user describes a different fix; apply that |
-| `skip` | defer within this run |
-| `intentional <reason>` / `wontfix <reason>` | append to the ledger; never surfaces again |
-| `explain` | graph neighbourhood, git history, reviewer reasoning |
-| `all <category>` | batch-approve a class (see below) |
-| `quit` | stop; say how many remain |
+| Action | Reached by | Effect |
+|---|---|---|
+| `fix` | option | apply the proposed edit |
+| `skip` | option | defer within this run |
+| `intentional <reason>` / `wontfix <reason>` | option | append to the ledger; never surfaces again |
+| `all <category>` | option, on the first finding of the class | batch-approve a class (see below) |
+| resolution 1..n | option, on a judged finding | apply that resolution |
+| `edit` | Other | user describes a different fix; apply that |
+| `explain` | Other | graph neighbourhood, git history, reviewer reasoning |
+| `quit` | Other | stop; say how many remain |
+
+The four options in any one box are chosen for that finding. A finding with no mechanical fix has no `fix` option; a judged finding offers resolutions instead. Do not pad a box to four options for symmetry.
 
 Record a decision:
 
@@ -162,7 +226,7 @@ Without this the loop is whack-a-mole. With it, fixing a root cause visibly shri
 
 ### Batch-approve
 
-`all <category>` applies every finding in a class with exactly one mechanically correct fix - a relative link where precisely one file matches the basename, an anchor where precisely one heading slugifies to it. Show the combined diff, confirm once.
+`all <category>` applies every finding in a class with exactly one mechanically correct fix - a relative link where precisely one file matches the basename, an anchor where precisely one heading slugifies to it. Print the combined diff, then offer it as an option on the first finding of that class. One box, one confirmation, the whole class.
 
 **Never batch-eligible:**
 

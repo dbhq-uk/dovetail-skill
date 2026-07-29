@@ -72,7 +72,11 @@ Ask in any session: *"run dovetail on this repo"*. It scans, shows you what is c
 
 Say *"run dovetail cheap"* to drop every reviewer a tier, or *"thorough"* to put them all on the strongest model. *"quick"* skips the reviewers entirely and gives you the exact findings only, for free.
 
-Each finding offers `fix`, `edit`, `skip`, `intentional <why>`, `explain`, `all <category>` to batch a class, or `quit`. Dismissals go to `.dovetail/decisions.jsonl`, which is committed - so a judgement made once applies to your colleagues and to CI.
+Each finding arrives as a question box: apply the fix, skip it, mark it intentional, or batch the whole class in one confirmation. A judged finding offers the candidate resolutions instead, because the right answer is not knowable from the text alone. Anything else - a different fix, `explain`, `quit` - goes in as free text.
+
+Where the evidence names a winner, one option is marked **(Recommended)** and says what makes it the answer. Where it does not - the sources disagree and nothing arbitrates - nothing is marked, and you get an open question. That asymmetry is deliberate: a tool that recommends on every finding teaches you to stop reading.
+
+Dismissals go to `.dovetail/decisions.jsonl`, which is committed - so a judgement made once applies to your colleagues and to CI.
 
 Or drive the scan directly:
 
