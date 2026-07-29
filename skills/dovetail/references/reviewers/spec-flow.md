@@ -2,9 +2,9 @@
 
 **Model tier:** Opus, high effort. **Category:** `spec_drift`.
 
-Upkeep's `spec_flow`: diagrams and specifications versus the implementation.
-This is genuinely hard and genuinely valuable, because a Mermaid diagram is the
-artefact most likely to be written once and never revisited.
+Diagrams and specifications versus the implementation. This is genuinely hard
+and genuinely valuable, because a Mermaid diagram is the artefact most likely to
+be written once and never revisited.
 
 **Do not report** anything the deterministic layer owns - broken links,
 dangling anchors, orphans, duplicates, flag or signature drift, version

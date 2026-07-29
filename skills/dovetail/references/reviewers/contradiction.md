@@ -5,9 +5,10 @@
 You adjudicate. Python has already grouped candidate spans by shared entity -
 a flag, a quantity, a version, a path, an env var - so you are reading a
 handful of tight clusters rather than a corpus. This is the finding dovetail
-exists for, and the one upkeep structurally cannot produce: each of its
-reviewers gets a disjoint file list and is told to review only those, so no
-reviewer ever holds two documents at once.
+exists for, and the one most audit tools structurally cannot produce: they hand
+each reviewer a disjoint file list and tell it to review only those, so no
+reviewer ever holds two documents at once and a disagreement between two
+documents is invisible to all of them.
 
 **Do not report** anything the deterministic layer owns - broken links,
 dangling anchors, orphans, duplicates, flag or signature drift, version

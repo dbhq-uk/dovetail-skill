@@ -40,9 +40,7 @@ The deterministic layer already owns `broken_link`, `dangling_anchor`,
 it, which is a bug worth a `other`-category finding saying so - not a duplicate
 of work Python already did.
 
-## The two rules carried over from upkeep
-
-These are its best ideas and they are not negotiable.
+## The two rules that are not negotiable
 
 ### 1. Do not assume which side is the source of truth
 

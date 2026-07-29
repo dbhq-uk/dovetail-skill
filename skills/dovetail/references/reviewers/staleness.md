@@ -2,10 +2,9 @@
 
 **Model tier:** Opus, high effort. **Category:** `staleness`.
 
-Documentation that no longer describes the code. This is upkeep's
-`docs_staleness`, reduced to its genuinely fuzzy residue: flag drift, signature
-drift, version divergence, dead code and missing paths are already found
-exactly by Python, so **do not report those**. What is left is semantic - the
+Documentation that no longer describes the code - reduced to its genuinely
+fuzzy residue. Flag drift, signature drift, version divergence, dead code and
+missing paths are already found exactly by Python, so **do not report those**. What is left is semantic - the
 prose describes a behaviour the code no longer has.
 
 ## Look for
