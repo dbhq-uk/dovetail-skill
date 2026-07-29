@@ -4,8 +4,8 @@ Typed reference graph over repository files.
 
 Every edge records where it came from (`src`, `line`), how it was written
 (`kind`, `raw`), and what it resolves to (`dst`, `anchor`). This replaces the
-basename word-boundary heuristic the prior tool uses, where the word "config" in a
-sentence counted as a reference to `config.py` — false edges of that kind
+basename word-boundary heuristic the prior tool uses, where the word "config"
+in a sentence counted as a reference to `config.py` - false edges of that kind
 silently hide real orphans, because an orphan check treats any inbound edge as
 proof the file is alive.
 
@@ -36,8 +36,13 @@ from slugify import heading_slugs, track_fence
 
 TEXT_MODALITIES = {'text', 'vector_diagram'}
 
-_MD_LINK = re.compile(r'(!?)\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)')
-_MD_REFDEF = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?')
+# A destination wrapped in <> is CommonMark's way of carrying spaces, which is
+# the only reason the form exists. Matching `<?([^)\s>]+)>?` looks like support
+# for it but is not: the character class still stops at the first space, so
+# `[x](<a b.pdf>)` silently resolved to `a` and the file read as an orphan.
+# The alternation keeps the brackets in the capture; `_unbracket` strips them.
+_MD_LINK = re.compile(r'(!?)\[[^\]]*\]\(\s*(<[^<>\n]*>|[^)\s>]+)[^)]*\)')
+_MD_REFDEF = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*(<[^<>\n]*>|[^\s>]+)')
 _HTML_ATTR = re.compile(r'\b(?:src|href)\s*=\s*["\']([^"\']+)["\']')
 _IMPORT = re.compile(r"""(?:from|require\s*\(|import)\s*['"]([^'"]+)['"]""")
 _PATH_LITERAL = re.compile(r'(?<![\w/])((?:\.{1,2}/)?(?:[\w.-]+/)+[\w.-]+\.\w*[A-Za-z]\w*)')
@@ -80,6 +85,13 @@ def _kinds_for(path: str) -> frozenset:
 
 def _is_external(target: str) -> bool:
     return bool(_EXTERNAL.match(target))
+
+
+def _unbracket(target: str) -> str:
+    """Strip CommonMark's <> destination wrapper, if present."""
+    if len(target) > 1 and target.startswith('<') and target.endswith('>'):
+        return target[1:-1].strip()
+    return target
 
 
 def _resolve(src: str, target: str, known: set[str], *,
@@ -196,17 +208,19 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
         consumed.add(target.partition('#')[0])
 
     if 'md_link' in allowed or 'md_image' in allowed:
-        for bang, target in _MD_LINK.findall(line):
+        for bang, raw_target in _MD_LINK.findall(line):
             kind = 'md_image' if bang else 'md_link'
             if kind in allowed:
+                target = _unbracket(raw_target)
                 found.append((kind, target))
                 consume(target)
 
     if 'md_refdef' in allowed:
         match = _MD_REFDEF.match(line)
         if match:
-            found.append(('md_refdef', match.group(1)))
-            consume(match.group(1))
+            target = _unbracket(match.group(1))
+            found.append(('md_refdef', target))
+            consume(target)
 
     if 'html' in allowed:
         for target in _HTML_ATTR.findall(line):

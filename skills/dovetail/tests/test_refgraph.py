@@ -89,6 +89,44 @@ class TestMarkdownLinks(GraphCase):
         write(self.repo, 'README.md', '```\n[x](docs/nope.md)\n```\n')
         self.assertEqual(self.graph(['README.md'])['edges'], [])
 
+    def test_angle_bracket_destination_carrying_spaces(self):
+        # CommonMark's <> wrapper exists precisely so a destination can hold
+        # spaces. The regex used to stop at the first one, so the link resolved
+        # to 'docs/a' and the real file read as an orphan.
+        write(self.repo, 'README.md', '[m](<docs/a b.md>)\n')
+        write(self.repo, 'docs/a b.md', '# a\n')
+        g = self.graph(['README.md', 'docs/a b.md'])
+        self.assertEqual(g['edges'][0]['dst'], 'docs/a b.md')
+        self.assertEqual(g['edges'][0]['raw'], 'docs/a b.md')
+
+    def test_angle_bracket_destination_with_parentheses(self):
+        write(self.repo, 'README.md', '[m](<docs/1. Minutes (Install).md>)\n')
+        write(self.repo, 'docs/1. Minutes (Install).md', '# a\n')
+        g = self.graph(['README.md', 'docs/1. Minutes (Install).md'])
+        self.assertEqual(g['edges'][0]['dst'], 'docs/1. Minutes (Install).md')
+
+    def test_angle_bracket_destination_with_anchor(self):
+        write(self.repo, 'README.md', '[m](<docs/a b.md#install>)\n')
+        write(self.repo, 'docs/a b.md', '# Install\n')
+        g = self.graph(['README.md', 'docs/a b.md'])
+        self.assertEqual(g['edges'][0]['dst'], 'docs/a b.md')
+        self.assertEqual(g['edges'][0]['anchor'], 'install')
+
+    def test_angle_bracket_reference_definition(self):
+        write(self.repo, 'README.md', 'text [ref]\n\n[ref]: <docs/a b.md>\n')
+        write(self.repo, 'docs/a b.md', '# a\n')
+        g = self.graph(['README.md', 'docs/a b.md'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'md_refdef')
+        self.assertEqual(edge['dst'], 'docs/a b.md')
+
+    def test_bare_destination_still_stops_at_whitespace(self):
+        # Without the wrapper a space still ends the destination, and the title
+        # that follows must not leak into it.
+        write(self.repo, 'README.md', '[m](docs/a.md "the title")\n')
+        write(self.repo, 'docs/a.md', '# a\n')
+        g = self.graph(['README.md', 'docs/a.md'])
+        self.assertEqual(g['edges'][0]['dst'], 'docs/a.md')
+
     def test_line_numbers_are_one_indexed(self):
         write(self.repo, 'README.md', 'line one\n\n[a](b.md)\n')
         write(self.repo, 'b.md', 'x')
@@ -153,7 +191,7 @@ class TestPathLiterals(GraphCase):
         self.assertEqual(edge['dst'], 'scripts/run.py')
 
     def test_bare_word_is_not_an_edge(self):
-        # The the prior tool bug: the word "config" must not reference config.py
+        # The prior tool's bug: the word "config" must not reference config.py
         write(self.repo, 'README.md', 'Edit the config to taste.\n')
         write(self.repo, 'config.py', 'x = 1\n')
         g = self.graph(['README.md', 'config.py'])

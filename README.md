@@ -140,7 +140,7 @@ Repo-specific rules go in `.dovetail/checks/*.py` as modules exposing `check(inv
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 394 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 399 tests, no model calls, no network
 ```
 
 ## Development
