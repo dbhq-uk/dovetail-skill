@@ -66,9 +66,9 @@ MAX_PARALLEL = 6
 # silently. On a 474-file repo each reviewer was receiving 172 files in one
 # prompt, and the result was shallow coverage that read like thoroughness.
 #
-# Sharding is what the prior tool does and why it reads deeper: each of its reviewers
-# gets a disjoint slice and is told to review only those. Small batches cost
-# more calls, but each call can actually do its job.
+# Sharding is what the prior tool does and why it reads deeper: each of its
+# reviewers gets a disjoint slice and is told to review only those. Small
+# batches cost more calls, but each call can actually do its job.
 FILES_PER_BATCH = 20
 # Clusters are far cheaper to adjudicate than files are to read, so they batch
 # larger - but not unbounded, or the prompt hits ARG_MAX-class limits again.
@@ -290,8 +290,8 @@ def _escalate(repo_root: str, findings: list[dict], roster: dict,
     """Re-judge low-confidence findings on the strongest model.
 
     Opus rates get paid only where a cheaper model was uncertain, rather than
-    everywhere as insurance. The prior tool already collects `confidence` and uses it
-    for nothing but sort order.
+    everywhere as insurance. The prior tool already collects `confidence` and
+    uses it for nothing but sort order.
     """
     keep: list[dict] = []
     failures: list[str] = []

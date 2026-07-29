@@ -4,10 +4,10 @@ Candidate clustering, so contradiction detection is tractable.
 
 Naively, finding contradictions means comparing every claim in a repository
 against every other claim. That is quadratic in the corpus and would mean
-reading the whole thing twice through a model - the reason the prior tool has no
-document-versus-document contradiction check at all: each of its reviewers is
-handed a disjoint file list and told to review only those, so no reviewer ever
-holds two documents at once.
+reading the whole thing twice through a model - the reason the prior tool has
+no document-versus-document contradiction check at all: each of its reviewers
+is handed a disjoint file list and told to review only those, so no reviewer
+ever holds two documents at once.
 
 The fix is to do the expensive narrowing in Python. Group candidate spans by a
 shared *entity* - a flag, a path, a number with a unit, a command, a version -
@@ -39,8 +39,8 @@ _ENTITY_PATTERNS = [
     # quantities above only recognise ms/s/%/B and so on, which misses the
     # common documentation case: "20,000 words" in one file and "18,000 words"
     # in another is a contradiction and neither carries a unit. Found by
-    # running head-to-head against the prior tool, which caught it while dovetail
-    # did not.
+    # running head-to-head against the prior tool, which caught it while
+    # dovetail did not.
     #
     # The noun list is curated rather than "any word". Matching any word was
     # tried and abandoned: it took one repository from 12 clusters to 238,

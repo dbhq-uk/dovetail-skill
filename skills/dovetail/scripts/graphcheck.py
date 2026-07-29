@@ -206,11 +206,11 @@ def _mentioned_basenames(inventory: dict) -> frozenset[str]:
     by name is conclusive proof the file is known and used, and treating it as
     an orphan is a false positive.
 
-    The prior tool does the opposite and matches basenames everywhere, which is why its
-    orphan check silently hides real orphans - `config.py` counts as referenced
-    by any document containing the word "config". Splitting the two bars gets
-    both right: a slash-bearing path is a reference, a bare basename is only
-    ever evidence of life.
+    The prior tool does the opposite and matches basenames everywhere, which is
+    why its orphan check silently hides real orphans - `config.py` counts as
+    referenced by any document containing the word "config". Splitting the two
+    bars gets both right: a slash-bearing path is a reference, a bare basename
+    is only ever evidence of life.
     """
     basenames = {posixpath.basename(e['path']) for e in inventory['files']}
     # Only basenames that look like filenames; a word like "README" without an
@@ -272,12 +272,12 @@ DIRECTORY_ORPHAN_MIN = 3
 def _group_orphans(inventory: dict, loose: list[dict]) -> list[dict]:
     """Report a wholly-unreferenced directory once, not once per file.
 
-    Head-to-head against the prior tool on a 474-file repository: dovetail reported 123
-    orphans across 49 directories, the prior tool reported 5. Dovetail's list contained
-    every one of the prior tool's, so the detection was not worse - the *reporting*
-    was. Thirteen separate findings for thirteen unreferenced insurance PDFs is
-    thirteen things nobody reads; 'this directory of 13 files is unreferenced'
-    is one thing somebody acts on.
+    Head-to-head against the prior tool on a 474-file repository: dovetail
+    reported 123 orphans across 49 directories, the prior tool reported 5.
+    Dovetail's list contained every one of theirs, so the detection was not
+    worse - the *reporting* was. Thirteen separate findings for thirteen
+    unreferenced insurance PDFs is thirteen things nobody reads; 'this
+    directory of 13 files is unreferenced' is one thing somebody acts on.
 
     Recall is unchanged - every file is still named in the evidence.
     """

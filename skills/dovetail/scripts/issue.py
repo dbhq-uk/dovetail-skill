@@ -6,8 +6,8 @@ One issue, found by label and rewritten in place. Never a new issue per run:
 a weekly job that opens a fresh issue every week is a job whose notifications
 people mute within a month, and muted output is the same as no output.
 
-Ported from the prior tool's `find-issue.ts` / `issue.ts`, and smaller here because
-`gh` does the API work.
+Ported from the prior tool's `find-issue.ts` / `issue.ts`, and smaller here
+because `gh` does the API work.
 
 Usage:
   issue.py --findings FILE [--scan FILE] [--repo OWNER/NAME]

@@ -297,11 +297,11 @@ if __name__ == '__main__':
 class OrphanLiveness(unittest.TestCase):
     """A file named by another file is not an orphan, even without a link.
 
-    Regression from the head-to-head against the prior tool on a real repository:
-    dovetail reported 18 orphans where the prior tool reported 1. The graph only calls
-    something a reference if it carries a slash, which is right for reporting a
-    broken link and wrong for orphan detection - a docs table listing
-    `citation_manager.py` by name proves the file is known and used.
+    Regression from the head-to-head against the prior tool on a real
+    repository: dovetail reported 18 orphans where it reported 1. The graph
+    only calls something a reference if it carries a slash, which is right for
+    reporting a broken link and wrong for orphan detection - a docs table
+    listing `citation_manager.py` by name proves the file is known and used.
     """
 
     def setUp(self):
@@ -342,8 +342,8 @@ class OrphanLiveness(unittest.TestCase):
 
         The liveness lookbehind excluded '/', so a filename inside a path never
         matched - and every asset a site references by absolute web path read
-        as an orphan. Caught by disagreeing with the prior tool on a real repo, where
-        the prior tool was right.
+        as an orphan. Caught by disagreeing with the prior tool on a real repo,
+        where it was right.
         """
         self._write('public/icons/icon-shield.webp', 'binary-ish\n')
         self._write('src/Proof.astro', 'const icons = ["/icons/icon-shield.webp"];\n')
@@ -352,8 +352,8 @@ class OrphanLiveness(unittest.TestCase):
     def test_a_wholly_unreferenced_directory_is_one_finding(self):
         """Regression: 13 unreferenced PDFs is one fact, not thirteen.
 
-        On a 474-file repo dovetail reported 123 orphans to the prior tool's 5. The
-        detection was not worse - dovetail's list contained all of the prior tool's -
+        On a 474-file repo dovetail reported 123 orphans to the prior tool's 5.
+        The detection was not worse - dovetail's list contained all of theirs -
         but 123 separate findings is a list nobody reads.
         """
         for n in range(4):
