@@ -172,5 +172,44 @@ class Validation(unittest.TestCase):
         self.assertEqual(out['blast_radius'], [])
 
 
+
+
+class LenientValidation(Validation):
+    """Quarantining bad findings instead of losing good ones.
+
+    The original design discarded a reviewer's whole batch on any invalid
+    finding. On the first live run that cost every spec-flow finding because
+    one of them quoted a line that did not exist - and the rest were sound.
+    """
+
+    def test_unsound_finding_is_dropped_and_the_rest_kept(self):
+        rejected = []
+        out = validate_findings(
+            [finding(problem='a'),
+             finding(problem='b', evidence=[
+                 {'file': 'README.md', 'line': 1, 'quote': 'not in the file'}]),
+             finding(problem='c')],
+            'spec-flow', self.repo, rejected=rejected)
+        self.assertEqual([f['problem'] for f in out], ['a', 'c'])
+        self.assertEqual(len(rejected), 1)
+        self.assertIn('fabricated', rejected[0])
+
+    def test_what_was_dropped_is_reported_not_hidden(self):
+        rejected = []
+        validate_findings([finding(category='broken_link')], 'staleness',
+                          self.repo, rejected=rejected)
+        self.assertTrue(rejected[0])
+
+    def test_transport_failure_still_raises(self):
+        # Nothing can be salvaged from unparseable output; the caller retries.
+        with self.assertRaises(ValidationError):
+            validate_findings('not json at all', 'staleness', self.repo,
+                              rejected=[])
+
+    def test_strict_mode_is_unchanged_without_a_rejected_list(self):
+        with self.assertRaises(ValidationError):
+            validate_findings([finding(), finding(category='broken_link')],
+                              'staleness', self.repo)
+
 if __name__ == '__main__':
     unittest.main()

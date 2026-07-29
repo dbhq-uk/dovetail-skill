@@ -137,14 +137,29 @@ def _line_matches(repo_root: str, item: dict) -> bool:
     return quote in actual or actual in quote
 
 
-def validate_findings(raw: object, reviewer: str, repo_root: str) -> list[dict]:
+def validate_findings(raw: object, reviewer: str, repo_root: str,
+                      rejected: list[str] | None = None) -> list[dict]:
     """Return schema-valid findings, or raise ValidationError.
 
-    Rejects the whole batch rather than filtering silently: a reviewer emitting
-    malformed output is a reviewer whose *valid-looking* findings should also
-    be distrusted, and a partial result presented as complete is a lie about
-    coverage.
+    Two different failures, handled differently - a distinction learned by
+    running this against a live model.
+
+    **Transport failure** (not JSON, not an array) raises. Nothing can be
+    salvaged and the caller retries.
+
+    **A single invalid finding** is dropped and appended to `rejected`, and the
+    rest are kept. The original design discarded the whole batch on the theory
+    that a reviewer producing one bad finding cannot be trusted at all. On the
+    first live run that cost every `spec-flow` finding because one of them
+    quoted a line that did not exist - and the others were fine. A fabricated
+    quote is a property of that finding, not proof the others are wrong, and
+    silently losing good findings is a worse failure than reporting them with
+    a note about what was dropped.
+
+    When `rejected` is None the strict behaviour is kept, so existing callers
+    and the contract tests are unaffected.
     """
+    strict = rejected is None
     if isinstance(raw, str):
         text = raw.strip()
         fence = re.match(r'^```(?:json)?\s*\n(.*?)\n```$', text, re.S)
@@ -162,6 +177,19 @@ def validate_findings(raw: object, reviewer: str, repo_root: str) -> list[dict]:
     out: list[dict] = []
     for index, finding in enumerate(raw):
         where = f'{reviewer}[{index}]'
+        try:
+            out.append(_validate_one(finding, where, reviewer, repo_root))
+        except ValidationError as exc:
+            if strict:
+                raise
+            rejected.append(str(exc))
+    return out
+
+
+def _validate_one(finding: object, where: str, reviewer: str,
+                  repo_root: str) -> dict:
+    """Validate a single finding, raising ValidationError if it is not sound."""
+    if True:
         if not isinstance(finding, dict):
             raise ValidationError(f'{where}: not an object')
 
@@ -214,5 +242,4 @@ def validate_findings(raw: object, reviewer: str, repo_root: str) -> list[dict]:
             [item['file'] for item in evidence],
             finding.get('claim') or finding['problem'],
         )
-        out.append(finding)
-    return out
+        return finding

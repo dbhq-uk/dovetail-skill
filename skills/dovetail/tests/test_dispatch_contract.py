@@ -137,6 +137,42 @@ class ContextRouting(Base):
         self.assertEqual(ROSTER['claim-extract'].get('produces'), 'claims')
 
 
+class Robustness(Base):
+    """The two failure modes that cost a live run most of its coverage."""
+
+    def test_retry_suffix_restates_the_contract(self):
+        self.assertIn('JSON array', ci_dispatch.RETRY_SUFFIX)
+        self.assertIn('[]', ci_dispatch.RETRY_SUFFIX)
+
+    def test_dispatch_retries_once_on_unparseable_output(self):
+        calls = []
+
+        def fake_run(prompt, model, repo_root, timeout=0):
+            calls.append(prompt)
+            # Prose first, valid JSON once the contract is restated.
+            return 'Sure! Here is what I found...' if len(calls) == 1 else '[]'
+
+        original = ci_dispatch.run_claude
+        ci_dispatch.run_claude = fake_run
+        try:
+            result = ci_dispatch.dispatch(self.repo, only=['staleness'])
+        finally:
+            ci_dispatch.run_claude = original
+        self.assertEqual(len(calls), 2)
+        self.assertIn(ci_dispatch.RETRY_SUFFIX, calls[1])
+        self.assertEqual(result['failed_reviewers'], [])
+
+    def test_a_reviewer_that_never_complies_is_reported(self):
+        original = ci_dispatch.run_claude
+        ci_dispatch.run_claude = lambda *a, **k: 'still prose'
+        try:
+            result = ci_dispatch.dispatch(self.repo, only=['staleness'])
+        finally:
+            ci_dispatch.run_claude = original
+        self.assertEqual(len(result['failed_reviewers']), 1)
+        self.assertIn('staleness', result['failed_reviewers'][0])
+
+
 class NoTriageInTheShim(Base):
     def test_shim_has_no_write_path(self):
         # All interaction lives in SKILL.md, which CI never invokes. If the

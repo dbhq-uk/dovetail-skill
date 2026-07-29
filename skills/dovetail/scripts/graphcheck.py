@@ -16,6 +16,7 @@ import posixpath
 import re
 from datetime import datetime
 
+from dynref import dynamically_referenced
 from store import make_finding
 
 # Kinds strong enough to call a broken link. A `path_literal` is a plausible
@@ -237,6 +238,10 @@ def orphans(inventory: dict, graph: dict) -> list[dict]:
     """Files with no inbound references that are not legitimate entry points."""
     inbound = graph['inbound']
     mentioned = _mentioned_basenames(inventory)
+    # Files the repository's own code loads by constructed path. Inferring
+    # these is what lets a repo keep its documents written for readers instead
+    # of adding cross-links to satisfy this check.
+    dynamic = dynamically_referenced(inventory)
     findings = []
     for entry in inventory['files']:
         path = entry['path']
@@ -244,6 +249,8 @@ def orphans(inventory: dict, graph: dict) -> list[dict]:
             continue
         if posixpath.basename(path) in mentioned:
             continue  # named by another file; known and used, just not linked
+        if path in dynamic:
+            continue  # loaded at runtime by a constructed path
         findings.append(make_finding(
             source='graph',
             category='orphan',
