@@ -30,8 +30,8 @@ holds the roster, tiering and the shared validator;
 [`claimscan.py`](skills/dovetail/scripts/claimscan.py) narrows contradiction
 candidates into clusters. Reviewers run as in-session subagents interactively,
 or through [`ci_dispatch.py`](skills/dovetail/scripts/ci_dispatch.py) for the
-scheduled job. Rubrics live in
-[`references/`](skills/dovetail/references/README.md).
+scheduled job. Rubrics live in `skills/dovetail/references/reviewers/`, loaded by name
+at dispatch time.
 
 **Layer 3, triage** - entirely in [`SKILL.md`](skills/dovetail/SKILL.md). No
 Python TUI: findings are rendered into the session as markdown, which makes the

@@ -45,6 +45,15 @@ from reviewer import (
 REFERENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              '..', 'references')
 DEFAULT_TIMEOUT = 900
+
+# Appended on a retry after unparseable output. Deliberately blunt: the first
+# attempt already carried the full contract, so what failed was compliance,
+# not comprehension.
+RETRY_SUFFIX = (
+    '\n\n---\n\nIMPORTANT: your previous reply could not be parsed. Reply with '
+    'a JSON array and nothing else - no explanation, no preamble, no code '
+    'fence. If you found nothing, reply exactly: []'
+)
 # Reviewers are independent, so they overlap. Bounded because each one is a
 # subprocess holding a model connection, not because of local CPU.
 MAX_PARALLEL = 4
@@ -159,23 +168,49 @@ def dispatch(repo_root: str, profile: str = 'default',
 
     def run_one(name: str) -> tuple[str, list[dict] | None, str | None]:
         entry = roster[name]
-        try:
-            raw = run_claude(
-                build_prompt(name, root, _context_for(name, inventory, graph)),
-                entry['model'], root, timeout=timeout)
-            return name, validate_findings(raw, name, root), None
-        except (RuntimeError, ValidationError, subprocess.TimeoutExpired,
-                FileNotFoundError, OSError) as exc:
-            return name, None, f'{type(exc).__name__}: {exc}'[:400]
+        prompt = build_prompt(name, root, _context_for(name, inventory, graph))
+        rejected: list[str] = []
+        last_error = None
+
+        # One retry on a transport failure. On the first live run the
+        # `convention` reviewer replied in prose and produced nothing at all -
+        # a whole reviewer's coverage lost to a formatting slip. Restating the
+        # contract and asking again is far cheaper than the lost findings.
+        for attempt in range(2):
+            try:
+                raw = run_claude(
+                    prompt if attempt == 0 else prompt + RETRY_SUFFIX,
+                    entry['model'], root, timeout=timeout)
+            except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError,
+                    OSError) as exc:
+                return name, None, f'{type(exc).__name__}: {exc}'[:400]
+            try:
+                # rejected= makes this lenient: one unsound finding is dropped
+                # and named, rather than discarding the reviewer's good work.
+                found = validate_findings(raw, name, root, rejected=rejected)
+            except ValidationError as exc:
+                last_error = str(exc)
+                continue
+            note = None
+            if rejected:
+                note = (f'{name}: {len(rejected)} finding(s) dropped as unsound '
+                        f'- {rejected[0][:160]}')
+            return name, found, note
+
+        return name, None, f'ValidationError after retry: {last_error}'[:400]
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        for name, got, error in pool.map(run_one, names):
-            if error is not None:
+        for name, got, note in pool.map(run_one, names):
+            if got is None:
                 # A reviewer that fails is named, never silent: a partial
                 # result presented as complete is a lie about coverage.
-                failed.append(f'{name} ({error})')
+                failed.append(f'{name} ({note})')
                 continue
-            findings.extend(got or [])
+            if note:
+                # Findings survived, but something was dropped - say so rather
+                # than let a quietly-reduced result read as a clean one.
+                failed.append(note)
+            findings.extend(got)
 
     if escalation_enabled(profile):
         findings, escalation_failures = _escalate(root, findings, roster, timeout)
