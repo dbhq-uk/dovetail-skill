@@ -2,9 +2,9 @@
 
 **Model tier:** Sonnet, medium effort. **Category:** `dead_code` or `other`.
 
-The prior tool's `code_hygiene`, reduced to what Python cannot do. Dead *Python* code is
-already found exactly by AST analysis, so **do not report Python dead code**.
-Your ground is everything else.
+Reduced to what Python cannot do. Dead *Python* code is already found exactly by
+AST analysis, so **do not report Python dead code**. Your ground is everything
+else.
 
 ## Look for
 
