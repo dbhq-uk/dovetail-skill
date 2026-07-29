@@ -35,6 +35,12 @@ for src in "$SCRIPT_DIR"/skills/*/; do
   mkdir -p "$target"
   # Every directory SKILL.md can reference, so each one exists under the
   # rewritten path too.
+  # Clear what a previous install left before linking what this one needs.
+  # Without this, a directory removed upstream survives as a symlink to a path
+  # that no longer exists, and a dangling link fails more confusingly than a
+  # missing file because it still looks installed. Only symlinks are removed,
+  # so a real SKILL.md is never at risk.
+  find "$target" -mindepth 1 -maxdepth 1 -type l -exec rm -f {} +
   for sub in scripts ci references tests; do
     [ -d "$src/$sub" ] && ln -sfn "$src/$sub" "$target/$sub"
   done
