@@ -74,7 +74,7 @@ dovetail · <repo> · <file_count> files, <edge_count> references
 
   ✓ exact          9 findings   (2 high · 5 med · 2 low)
   ⋯ judgement      running - contradiction, staleness, xref
-  – suppressed     3 by prior decisions
+  - suppressed     3 by prior decisions
 
 Starting with the 9 that are certain. More will join as reviewers land.
 ```

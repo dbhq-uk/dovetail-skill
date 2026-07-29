@@ -28,9 +28,15 @@ Findings come from two layers, and you always know which you are looking at.
 
 ## What makes it different
 
-**It is deterministic, and only deterministic.** No model calls, no API key, no network, no third-party packages. Every finding follows from the structure of the repository, so there is nothing to triage and nothing to second-guess.
+**The exact layer is deterministic, and only deterministic.** No model calls, no API key, no network, no third-party packages. Seventeen checks, every one following from the structure of the repository, so there is nothing to triage and nothing to second-guess.
 
-**Which means you can fail a build on it.** A checker that produces false positives gets switched off within a week - the triage costs more than the drift. These findings are certain enough to gate a pull request, and the scan takes seconds, so it costs you nothing to run on every one.
+**Which means you can fail a build on it.** A checker that produces false positives gets switched off within a week - the triage costs more than the drift. Exact findings are certain enough to gate a pull request, and the scan takes seconds, so it costs you nothing to run on every one. Judged findings never gate a build, in either CI job.
+
+**Nothing reaches a model that Python can compute exactly.** Every rubric names the categories it must not report, because a reviewer restating a check Python already did is offering a guess in place of a certainty. What is left for judgement is only what judgement is actually needed for.
+
+**Reviewers are given work they can finish.** Handing a reviewer a whole repository and one turn budget does not get the repository reviewed - it gets a few files read and the rest silently skipped, which looks exactly like thoroughness. Work is sharded into small batches, dispatched in parallel and deduped on a content fingerprint.
+
+**Fabricated evidence is rejected.** Every quote a reviewer returns is checked against the actual line in the file. A model inventing a plausible quote at a plausible line is the most damaging failure available, because the finding reads exactly like a true one.
 
 **It never edits without asking.** The scan itself has no write path at all. Fixes happen only in the triage loop, only one at a time, and only on your say-so - and dovetail checks `git status` between edits, so if anything changes that it did not apply, the run stops.
 
@@ -104,6 +110,23 @@ You append this yourself - the tool does not write to your repository. Because t
 
 Keep the `summary` field populated. It is redundant to the machine and load-bearing for you - without it the ledger is an unreadable list of hashes and nobody can audit their own past decisions.
 
+## The judgement layer
+
+Six reviewers, each reduced to the residue Python cannot settle, and each on the cheapest model that can do its job. Extraction is high-volume and near mechanical; adjudication is low-volume and high-judgement, so the expensive model reads candidate clusters rather than a corpus.
+
+| Reviewer | Model | What it is left with |
+|---|---|---|
+| `xref` | haiku | Missing cross-references worth making |
+| `convention` | sonnet | The repo's own stated rules, where Python cannot check them |
+| `code-hygiene` | sonnet | Non-Python dead code, duplicated logic that has diverged |
+| `contradiction` | opus | Two documents that cannot both be right |
+| `staleness` | opus | Docs describing behaviour the code no longer has |
+| `spec-flow` | opus | Diagrams and specs against the implementation |
+
+Say *"run dovetail cheap"* to drop every reviewer a tier and disable escalation, or *"thorough"* to put them all on the strongest model. `.dovetail/config.toml` sets the durable default and can override or disable any reviewer individually.
+
+Low-confidence findings from a cheaper model are re-judged on the strongest one before they reach you, so Opus rates are paid where a cheaper model was uncertain rather than everywhere as insurance.
+
 ## Configuration
 
 `.dovetail/config.toml`, committed, all optional: ignore globs, the default model profile, per-check toggles and per-reviewer model overrides. See [`references/config.md`](skills/dovetail/references/config.md).
@@ -113,14 +136,14 @@ Repo-specific rules go in `.dovetail/checks/*.py` as modules exposing `check(inv
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 359 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 394 tests, no model calls, no network
 ```
 
 ## Development
 
 Want to hack on the skill or run it from source with live edits? See [`docs/dev-setup.md`](docs/dev-setup.md).
 
-See [`docs/design-notes.md`](docs/design-notes.md) for why the tool is shaped this way, [`CONTRIBUTING.md`](CONTRIBUTING.md) to work on it, and [`AGENTS.md`](AGENTS.md) if you are an AI agent doing so - it states the three constraints that must not be broken.
+See [`docs/design-notes.md`](docs/design-notes.md) for why the tool is shaped this way, [`CONTRIBUTING.md`](CONTRIBUTING.md) to work on it, and [`AGENTS.md`](AGENTS.md) if you are an AI agent doing so - it states the constraints that must not be broken.
 
 The skill itself is [`skills/dovetail/SKILL.md`](skills/dovetail/SKILL.md).
 
