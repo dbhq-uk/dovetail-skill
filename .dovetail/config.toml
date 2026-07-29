@@ -1,0 +1,9 @@
+# dovetail's own configuration.
+#
+# Deliberately minimal: this repository is the tool's first user, and a config
+# that switched things off here would hide the findings dogfooding exists to
+# surface.
+
+# Reviewer tiering, profile and per-check toggles are all left at their
+# defaults. See skills/dovetail/references/config.md for what can go here.
+profile = "default"
