@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 
 from store import fingerprint
 
@@ -111,30 +112,103 @@ class ValidationError(ValueError):
     """A reviewer returned something that is not a valid finding set."""
 
 
-def _line_matches(repo_root: str, item: dict) -> bool:
-    """Whether the quoted text really appears at the cited line.
+class StaleEvidenceError(ValidationError):
+    """The cited line was edited after the reviewer read it.
+
+    A subclass so existing handlers still drop the finding, but the wording
+    never accuses the reviewer of fabricating anything - because it did not.
+    """
+
+
+# Quote verdicts.
+MATCH = 'match'          # quote is at the cited line
+MOVED = 'moved'          # quote is in the file, at a different line
+STALE = 'stale'          # quote was in the committed file, not in the working one
+ABSENT = 'absent'        # quote is in neither - fabricated
+UNREADABLE = 'unreadable'
+
+
+def _norm(text: str) -> str:
+    return re.sub(r'\s+', ' ', str(text)).strip()
+
+
+def _quote_line(lines: list[str], quote: str) -> int | None:
+    """1-indexed line holding `quote`, or None.
+
+    Substring either way, as at the cited line - but a blank line must not
+    match every quote, which `actual in quote` would do across a whole file.
+    """
+    for index, line in enumerate(lines):
+        actual = _norm(line)
+        if quote in actual or (actual and actual in quote):
+            return index + 1
+    return None
+
+
+def _committed_lines(repo_root: str, path: str) -> list[str] | None:
+    """The file as of HEAD, or None if git cannot say."""
+    try:
+        result = subprocess.run(
+            ['git', '-C', repo_root, 'show', f'HEAD:{path}'],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.split('\n')
+
+
+def quote_verdict(repo_root: str, item: dict) -> tuple[str, int | None]:
+    """Classify a piece of evidence against the file it cites.
 
     This is the anti-fabrication check. A model that invents a plausible quote
     at a plausible line is the single most damaging failure available here,
-    because the finding reads exactly like a true one. Comparing against the
-    file is cheap and settles it.
+    because the finding reads exactly like a true one.
+
+    But "the quote is not at that line" has three causes, and only one of them
+    is the model's fault:
+
+    - an edit *above* the line shifted it, and the quote is still in the file
+    - an edit *to* the line rewrote it, so the quote is gone from the working
+      file but still present in the committed one
+    - the model made it up
+
+    Treating all three as fabrication is wrong and was observed to be
+    expensive: during a triage run the orchestrator applied a fix the user had
+    approved, and the very next reviewer to return had its whole output
+    rejected because one finding quoted the line that fix had rewritten. Ten
+    sound findings were nearly discarded because dovetail edited the file
+    itself. Reading the committed blob separates the cases exactly, with no
+    heuristic about timestamps.
+
+    Where git cannot answer, the strict reading stands: unproven is fabricated.
     """
     path = os.path.join(repo_root, item['file'])
     try:
         with open(path, encoding='utf-8') as fh:
             lines = fh.read().split('\n')
     except (OSError, UnicodeDecodeError):
-        return True  # unreadable here is not proof of fabrication
-    index = item['line'] - 1
-    if index < 0 or index >= len(lines):
-        return False
-    quote = re.sub(r'\s+', ' ', str(item.get('quote', ''))).strip()
+        return UNREADABLE, None  # unreadable here is not proof of fabrication
+
+    quote = _norm(item.get('quote', ''))
     if not quote:
-        return True
-    actual = re.sub(r'\s+', ' ', lines[index]).strip()
-    # Substring either way: reviewers routinely quote a fragment of a long line,
-    # and occasionally normalise punctuation in a way that trims the ends.
-    return quote in actual or actual in quote
+        return MATCH, None
+
+    index = item['line'] - 1
+    if 0 <= index < len(lines):
+        actual = _norm(lines[index])
+        if quote in actual or (actual and actual in quote):
+            return MATCH, None
+
+    moved_to = _quote_line(lines, quote)
+    if moved_to is not None:
+        return MOVED, moved_to
+
+    committed = _committed_lines(repo_root, item['file'])
+    if committed is not None and _quote_line(committed, quote) is not None:
+        return STALE, None
+
+    return ABSENT, None
 
 
 def validate_findings(raw: object, reviewer: str, repo_root: str,
@@ -222,7 +296,19 @@ def _validate_one(finding: object, where: str, reviewer: str,
                 raise ValidationError(f'{where}: evidence item needs file and line')
             if not isinstance(item['line'], int):
                 raise ValidationError(f'{where}: evidence line must be an integer')
-            if not _line_matches(repo_root, item):
+            verdict, moved_to = quote_verdict(repo_root, item)
+            if verdict == MOVED:
+                # The quote is real and the line number drifted under an edit
+                # elsewhere in the file. Correct it and keep the finding: the
+                # evidence is sound, only the coordinate was stale.
+                item['line'] = moved_to
+            elif verdict == STALE:
+                raise StaleEvidenceError(
+                    f'{where}: {item["file"]}:{item["line"]} was edited after '
+                    'the reviewer read it - the quote is in the committed file '
+                    'but not the working one. Dropped as unverifiable, not '
+                    'fabricated; re-run the reviewer to re-check it')
+            elif verdict == ABSENT:
                 raise ValidationError(
                     f'{where}: quote does not appear at {item["file"]}:'
                     f'{item["line"]} - fabricated evidence')
