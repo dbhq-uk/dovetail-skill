@@ -19,7 +19,7 @@ The whole skill directory is symlinked, so edits - including to `SKILL.md` - are
 
 ## Before opening a PR
 
-- `python3 -m pytest skills/dovetail/tests/ -v` - all 399 tests pass, no network needed
+- `python3 -m pytest skills/dovetail/tests/ -v` - all 410 tests pass, no network needed
 - `python3 skills/dovetail/scripts/scan.py . --format json` - this repo scans clean
 - `claude plugin validate .` - the plugin validates
 

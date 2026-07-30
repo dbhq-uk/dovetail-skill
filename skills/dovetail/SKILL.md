@@ -55,15 +55,27 @@ Then spawn one subagent per reviewer, in parallel. For each:
 
 Profiles: **cheap** drops every reviewer one tier and disables escalation; **thorough** puts everything on opus/high. The user speaks a profile ("run dovetail cheap"); `.dovetail/config.toml` sets the durable default and per-reviewer overrides, which win.
 
-**Validate every reviewer's output** before it reaches the queue:
+**Validate every reviewer's output** before it reaches the queue. Always pass `rejected`, so one bad finding quarantines itself instead of taking the sound ones with it:
 
 ```bash
-python3 -c "import sys; sys.path.insert(0, '${CLAUDE_SKILL_DIR}/scripts'); \
-from reviewer import validate_findings; import json; \
-print(json.dumps(validate_findings(open('<file>').read(), '<reviewer>', '<repo-path>')))"
+python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_SKILL_DIR}/scripts'); \
+from reviewer import validate_findings; \
+r = []; out = validate_findings(open('<file>').read(), '<reviewer>', '<repo-path>', rejected=r); \
+print(json.dumps({'findings': out, 'rejected': r}))"
 ```
 
-This rejects fabricated evidence by checking every quote against the actual line. A reviewer whose output fails validation **failed** - name it in the header, do not use a partial result.
+Every quote is checked against the actual line, and each piece of evidence lands in one of four states:
+
+| State | Meaning | What happens |
+|---|---|---|
+| match | quote is at the cited line | kept |
+| moved | quote is elsewhere in the file | kept, line corrected silently |
+| stale | quote is in the committed file but not the working one | that finding dropped |
+| absent | quote is in neither | that finding dropped as **fabricated** |
+
+`stale` exists because dovetail edits files during its own triage loop. A fix the user approved can rewrite the very line a still-running reviewer quoted, and calling that fabrication throws away sound work - it was observed costing ten good findings in one run. Comparing against the committed blob separates a concurrent edit from an invention exactly, with no guessing from timestamps.
+
+**Report what was dropped, and say which kind.** `rejected` is not noise to swallow: fabrication means that reviewer is unreliable and is worth naming in the header, while stale means only that the tree moved and the finding can be re-checked by re-running it. Never present a filtered list as if it were complete.
 
 Escalate any finding with `confidence: low` from a haiku or sonnet reviewer to opus before queueing it, unless the profile is `cheap`.
 

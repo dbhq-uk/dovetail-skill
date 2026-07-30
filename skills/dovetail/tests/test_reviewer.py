@@ -15,9 +15,11 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+import subprocess  # noqa: E402
+
 from reviewer import (  # noqa: E402
-    ROSTER, ValidationError, escalation_enabled, needs_escalation,
-    resolve_roster, validate_findings,
+    ROSTER, StaleEvidenceError, ValidationError, escalation_enabled,
+    needs_escalation, resolve_roster, validate_findings,
 )
 
 REFERENCES = os.path.join(os.path.dirname(__file__), '..', 'references')
@@ -145,10 +147,31 @@ class Validation(unittest.TestCase):
                 {'file': 'README.md', 'line': 1, 'quote': 'text that is not there'}])])
         self.assertIn('fabricated', str(ctx.exception))
 
-    def test_line_beyond_end_of_file_is_rejected(self):
+    def test_line_beyond_end_of_file_with_no_such_quote_is_rejected(self):
         with self.assertRaises(ValidationError):
             self.check([finding(evidence=[
-                {'file': 'README.md', 'line': 9999, 'quote': 'hello'}])])
+                {'file': 'README.md', 'line': 9999, 'quote': 'nowhere at all'}])])
+
+    def test_a_quote_that_moved_is_kept_and_the_line_corrected(self):
+        # An edit above the cited line shifts it. The evidence is still sound,
+        # so correct the coordinate rather than throwing the finding away.
+        out = self.check([finding(evidence=[
+            {'file': 'README.md', 'line': 1, 'quote': 'second line'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 2)
+
+    def test_a_real_quote_cited_beyond_the_end_is_corrected(self):
+        out = self.check([finding(evidence=[
+            {'file': 'README.md', 'line': 9999, 'quote': 'hello'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 1)
+
+    def test_a_blank_line_does_not_match_every_quote(self):
+        # `actual in quote` matches trivially when actual is empty, so a
+        # whole-file search must guard it or any quote "moves" to a blank line.
+        with open(os.path.join(self.repo, 'gappy.md'), 'w', encoding='utf-8') as fh:
+            fh.write('first\n\n\nlast\n')
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[
+                {'file': 'gappy.md', 'line': 1, 'quote': 'absent text'}])])
 
     def test_partial_quote_of_a_real_line_is_accepted(self):
         self.assertEqual(len(self.check([finding(evidence=[
@@ -172,6 +195,83 @@ class Validation(unittest.TestCase):
         self.assertEqual(out['blast_radius'], [])
 
 
+
+
+class EditedUnderTheReviewer(unittest.TestCase):
+    """A file edited mid-run is not a reviewer fabricating evidence.
+
+    Observed live: during a triage run the orchestrator applied a fix the user
+    had approved, and the next reviewer to return had its entire output
+    rejected because one finding quoted the line that fix had rewritten. Ten
+    sound findings were nearly lost because dovetail edited the file itself.
+
+    The committed blob separates the cases exactly - no timestamp heuristics.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = self._tmp.name
+        self._git('init', '-q')
+        self._git('config', 'user.email', 'test@example.com')
+        self._git('config', 'user.name', 'Test')
+        self._write('README.md', 'the secretary is Rob Hawkins\nsecond line\n')
+        self._git('add', '-A')
+        self._git('commit', '-qm', 'initial')
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _git(self, *args):
+        subprocess.run(['git', '-C', self.repo, *args], check=True,
+                       capture_output=True)
+
+    def _write(self, name, body):
+        with open(os.path.join(self.repo, name), 'w', encoding='utf-8') as fh:
+            fh.write(body)
+
+    def _check(self, quote, **kw):
+        return validate_findings(
+            [finding(evidence=[{'file': 'README.md', 'line': 1, 'quote': quote}])],
+            'staleness', self.repo, **kw)
+
+    def test_a_quote_edited_away_is_stale_not_fabricated(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        with self.assertRaises(StaleEvidenceError) as ctx:
+            self._check('the secretary is Rob Hawkins')
+        message = str(ctx.exception)
+        self.assertIn('edited after', message)
+        self.assertNotIn('fabricated evidence', message)
+
+    def test_a_stale_finding_is_dropped_without_losing_the_others(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        rejected = []
+        out = validate_findings(
+            [finding(problem='a', evidence=[
+                {'file': 'README.md', 'line': 2, 'quote': 'second line'}]),
+             finding(problem='b', evidence=[
+                 {'file': 'README.md', 'line': 1,
+                  'quote': 'the secretary is Rob Hawkins'}]),
+             finding(problem='c', evidence=[
+                 {'file': 'README.md', 'line': 1, 'quote': 'Rob Gammage'}])],
+            'contradiction', self.repo, rejected=rejected)
+        self.assertEqual([f['problem'] for f in out], ['a', 'c'])
+        self.assertEqual(len(rejected), 1)
+        self.assertIn('not fabricated', rejected[0])
+
+    def test_a_quote_in_neither_version_is_still_fabrication(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        with self.assertRaises(ValidationError) as ctx:
+            self._check('a quote that was never anywhere')
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_stale_is_a_validation_error_so_existing_handlers_still_drop_it(self):
+        self._write('README.md', 'rewritten\n')
+        self.assertTrue(issubclass(StaleEvidenceError, ValidationError))
+
+    def test_an_unchanged_file_still_rejects_a_fabricated_quote(self):
+        with self.assertRaises(ValidationError) as ctx:
+            self._check('invented text')
+        self.assertIn('fabricated', str(ctx.exception))
 
 
 class LenientValidation(Validation):

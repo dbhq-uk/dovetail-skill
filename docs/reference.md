@@ -230,5 +230,5 @@ key and no network for the deterministic layer. The judgement layer needs a mode
 else runs without one.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 399 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 410 tests, no model calls, no network
 ```
