@@ -53,6 +53,14 @@ Findings come from two layers, and you always know which you are looking at.
 /plugin install dovetail@dbhq
 ```
 
+### Any agent (Cursor, Copilot, Windsurf, Gemini, Cline and more)
+
+```bash
+npx skills add dbhq-uk/dovetail-skill
+```
+
+The [skills.sh](https://skills.sh) CLI installs into whichever agent directories it finds, so this works outside Claude Code and Codex too.
+
 ### Local install (Claude Code or Codex)
 
 ```bash
