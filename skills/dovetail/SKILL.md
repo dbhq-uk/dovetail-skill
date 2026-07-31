@@ -133,55 +133,80 @@ Do **not** recommend when:
 
 An unmarked box is a legitimate, common output. A recommendation on every finding trains the user to accept the first option without reading, which costs more than it saves the first time dovetail is confidently wrong.
 
-### Rendering an exact finding
+### Rendering a finding
 
-Terse. There is nothing to argue about.
+**Clean markdown, then the question box. Nothing between them, and nothing after.**
 
-```
-[1/9] flag_drift · high · exact
-README.md:40 documents --out, but the script has no such flag.
+The single worst thing you can do here is wrap the finding in one big fenced code block. It kills bold, it kills the clickable `path:line` link, and the moment a real repository hands you `clients/eames-consulting/frontline-azure-war/delivery/index.md` every hand-aligned column collapses. Fenced blocks are for **diffs only**.
 
-  README.md:40          `--out FILE      write the report here`
-  scripts/run.py:12     add_argument("--output", help="write the report here")
+The shape, every time:
 
-Fix: rename the flag in README.md:40 to --output
-  - `--out FILE      write the report here`
-  + `--output FILE   write the report here`
-```
+---
 
-Then the box:
+**[3/226] contradiction · high** · judged · opus · high confidence
 
-```
-header    flag_drift
-question  Rename --out to --output in README.md:40?
-options   Apply the fix (Recommended)
-                              scripts/run.py:12 is the only definition of the
-                              flag, so the doc is the side that is wrong.
-          Skip for now        Stays in the queue and comes back next run.
-          Mark intentional    Recorded in the ledger. Never surfaces again.
-```
-
-Where a batch class is live, the first finding of that class gets a fourth option - `Fix all 9 in this class` - with the combined diff shown above the box.
-
-An option that records a permanent ledger entry must carry the reason with it. Where the reason is obvious from the repository, put it in the option label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in a single follow-up box. Never invent a reason to avoid the follow-up: a ledger full of guessed justifications is worse than one with gaps.
-
-### Rendering a judged finding
-
-Show the model and confidence. Here the options **are** the candidate resolutions, not `fix`/`skip` - the right answer is not knowable from the text alone, which is the whole reason this is a conversation and not a report.
-
-```
-[3/9] contradiction · high · judged (opus, high confidence)
 Two documents disagree about the request timeout.
 
-  README.md:88          "requests time out after 30 seconds"
-  docs/config.md:24     "the default timeout is 60s"
-  src/client.py:31      TIMEOUT = 30          ← code agrees with README
+**Evidence**
 
-Blast radius: 2 further docs cross-reference this value
-  docs/ja/config.md:24 · docs/troubleshooting.md:112
+`README.md:88`
+> requests time out after 30 seconds
+
+`docs/config.md:24`
+> the default timeout is 60s
+
+`src/client.py:31` - the code, agreeing with README
+> TIMEOUT = 30
+
+**Blast radius** - 2 further docs cite this value
+`docs/ja/config.md:24` · `docs/troubleshooting.md:112`
+
+---
+
+Then the box, immediately.
+
+Rules that make the difference:
+
+- **One fact per line.** Never align two columns across lines; a long path silently ruins it.
+- **Path on its own line as inline code**, quote beneath it as a blockquote. This survives any path length and keeps the path clickable.
+- **Blank line between every block.** Density is not clarity.
+- **Bold labels** (`Evidence`, `Fix`, `Blast radius`, `Why this side`) so the eye can skip to the part it wants.
+- **Lead with the one-sentence problem**, before any evidence. The reader should be able to stop after that sentence and still know what is being asked.
+- **Quote what the file says, not a paraphrase**, and never truncate mid-claim. If a quote is too long to sit on one line, that is fine - let it wrap.
+- Trim the metadata line to what is true: an exact finding is `· exact` with no model or confidence; a judged one names the model and confidence; note it when two or more reviewers found the same thing independently, because that is real signal.
+
+An **exact** finding is terser - there is nothing to argue about, so it carries a `Fix` block instead of the reasoning:
+
+---
+
+**[1/9] flag_drift · high** · exact
+
+`README.md:40` documents `--out`, but the script has no such flag.
+
+**Evidence**
+
+`README.md:40`
+> `--out FILE      write the report here`
+
+`scripts/run.py:12` - the only definition of the flag
+> `add_argument("--output", help="write the report here")`
+
+**Fix**
+
+```diff
+- --out FILE      write the report here
++ --output FILE   write the report here
 ```
 
-Then the box:
+---
+
+A **judged** finding gets a `Why this side` block whenever you are going to recommend an option - the grounds belong above the box, where there is room for them, not crammed into an option description.
+
+Where a batch class is live, print the combined diff under a **Fix all N in this class** heading before the box, then offer it as an option.
+
+### Writing the box
+
+For an exact finding the options are the actions. For a judged one the options **are** the candidate resolutions, not `fix`/`skip` - the right answer is not knowable from the text alone, which is the whole reason this is a conversation and not a report.
 
 ```
 header    contradictn
@@ -195,6 +220,10 @@ options   config.md is stale (Recommended)
 ```
 
 The recommendation is earned here: `ssot_direction` names the stale side, two independent sources agree against it, and the reviewer returned high confidence. Strip the mark and the ordering the moment any of those three fails - a contradiction where the code is silent and both documents are the same age gets an unmarked, genuinely open box.
+
+Keep option descriptions to what actually happens to the files. The evidence is already above the box; do not restate it.
+
+An option that records a permanent ledger entry must carry the reason with it. Where the reason is obvious from the repository, put it in the option label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in a single follow-up box. Never invent a reason to avoid the follow-up: a ledger full of guessed justifications is worse than one with gaps.
 
 "Other" already covers "something else - tell me", so it never occupies an option.
 
