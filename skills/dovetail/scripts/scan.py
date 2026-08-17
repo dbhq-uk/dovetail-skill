@@ -20,7 +20,13 @@ import json
 import os
 import sys
 
-import cochange
+import bootstrap
+
+# Before any dovetail import, several of which reach tomllib: on a host whose
+# `python3` predates 3.11 this re-execs the whole command under a newer one.
+bootstrap.ensure()
+
+import cochange  # noqa: E402
 import convcheck
 import exactcheck
 import graphcheck

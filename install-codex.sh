@@ -20,11 +20,22 @@ if [ -n "$MISSING" ]; then
   echo "Missing required dependencies:$MISSING"
   exit 1
 fi
-if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
-  echo "dovetail needs Python 3.11 or newer; found $(python3 -V 2>&1)"
+# The 3.11 floor applies to whatever interpreter ends up running dovetail, not
+# to `python3` specifically: scripts/bootstrap.py re-execs under the newest
+# suitable one on PATH, so 3.10-as-python3 with 3.12 alongside is supported.
+PYTHON="$(python3 "$SCRIPT_DIR/skills/dovetail/scripts/bootstrap.py" 2>/dev/null || true)"
+if [ -z "$PYTHON" ]; then
+  echo "dovetail needs Python 3.11 or newer for tomllib; found $(python3 -V 2>&1)"
+  echo "and no newer interpreter on PATH."
+  echo "  macOS:  brew install python@3.12"
+  echo "  Ubuntu: sudo apt install python3.12"
+  echo "dovetail will then use it automatically - 'python3' itself need not change."
   exit 1
 fi
-echo "Dependencies OK ($(python3 -V 2>&1), standard library only)."
+echo "Dependencies OK ($("$PYTHON" -V 2>&1), standard library only)."
+if [ "$(command -v python3)" != "$PYTHON" ]; then
+  echo "  ('python3' here is $(python3 -V 2>&1); dovetail will re-exec under $PYTHON.)"
+fi
 echo
 
 for src in "$SCRIPT_DIR"/skills/*/; do

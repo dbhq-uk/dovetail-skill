@@ -19,8 +19,15 @@ import ast
 import json
 import os
 import re
-import tomllib
-from typing import Iterable
+
+import bootstrap
+
+# Must precede the tomllib import: tomllib is the 3.11 floor, and this re-execs
+# under a newer interpreter when `python3` is older than that.
+bootstrap.ensure()
+
+import tomllib  # noqa: E402
+from typing import Iterable  # noqa: E402
 
 from store import make_finding
 
