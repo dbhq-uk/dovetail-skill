@@ -11,6 +11,9 @@ This is one happy path. Every flag, check name and configuration key is in the
 Python 3.11 or newer and `git`. That is the whole dependency list - no packages, no
 virtualenv, no API key. The deterministic scan makes no network calls at all.
 
+It is enough for a 3.11+ interpreter to be on your `PATH` under any name - if `python3` itself
+is older, dovetail finds the newer one and re-execs under it, leaving your machine as it is.
+
 The judgement layer needs a model, which you have if you are running this inside Claude Code
 or Codex. Everything below works without it; you just get the certain findings only.
 

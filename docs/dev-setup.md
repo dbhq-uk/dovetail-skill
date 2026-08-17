@@ -5,7 +5,7 @@ Set the skill up from source with a **live symlink install**, so your edits are 
 ## Prerequisites
 
 - `git` (and the GitHub CLI `gh` if you'll push changes)
-- `python3` 3.11 or newer - and nothing else. The skill is standard library only, so there is no virtualenv to create and no packages to install
+- Python 3.11 or newer on `PATH` under any name - and nothing else. The skill is standard library only, so there is no virtualenv to create and no packages to install. If `python3` itself is older than 3.11, dovetail re-execs under the newest suitable interpreter it finds, so you do not need to repoint `python3`
 - `pytest` if you want to run the test suite
 
 ## 1. Clone
@@ -27,7 +27,7 @@ The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill'
 ## 3. Verify
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v          # 399 tests, no network required
+python3 -m pytest skills/dovetail/tests/ -v          # 408 tests, no network required
 python3 skills/dovetail/scripts/scan.py . --format json   # this repo must scan clean
 claude plugin validate .                             # the plugin metadata validates
 ```

@@ -16,8 +16,13 @@ echo "=== dovetail skill installer (Claude Code) ==="
 echo
 
 # --- Dependencies ---
-# Standard library only, so python3 and git are the entire requirement. The
+# Standard library only, so a Python and git are the entire requirement. The
 # 3.11 floor is the tested one.
+#
+# The floor applies to the interpreter that *runs* dovetail, which need not be
+# the one `python3` resolves to: scripts/bootstrap.py re-execs under the newest
+# suitable interpreter on PATH. So a host with 3.10 as `python3` and 3.12
+# installed alongside is fully supported, and nothing about the host changes.
 MISSING=""
 command -v python3 >/dev/null 2>&1 || MISSING="$MISSING python3"
 command -v git     >/dev/null 2>&1 || MISSING="$MISSING git"
@@ -27,11 +32,19 @@ if [ -n "$MISSING" ]; then
   echo "  Ubuntu: sudo apt install$MISSING"
   exit 1
 fi
-if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
-  echo "dovetail needs Python 3.11 or newer; found $(python3 -V 2>&1)"
+PYTHON="$(python3 "$SCRIPT_DIR/skills/dovetail/scripts/bootstrap.py" 2>/dev/null || true)"
+if [ -z "$PYTHON" ]; then
+  echo "dovetail needs Python 3.11 or newer for tomllib; found $(python3 -V 2>&1)"
+  echo "and no newer interpreter on PATH."
+  echo "  macOS:  brew install python@3.12"
+  echo "  Ubuntu: sudo apt install python3.12"
+  echo "dovetail will then use it automatically - 'python3' itself need not change."
   exit 1
 fi
-echo "Dependencies OK ($(python3 -V 2>&1), standard library only)."
+echo "Dependencies OK ($("$PYTHON" -V 2>&1), standard library only)."
+if [ "$(command -v python3)" != "$PYTHON" ]; then
+  echo "  ('python3' here is $(python3 -V 2>&1); dovetail will re-exec under $PYTHON.)"
+fi
 echo
 
 # --- Install each skill in this repo as a full-directory symlink ---

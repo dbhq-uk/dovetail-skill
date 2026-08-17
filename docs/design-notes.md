@@ -54,6 +54,12 @@ A repository with existing drift cannot turn on a whole-repository check without
 
 No third-party dependencies at all, so there is nothing to install, no virtualenv, no lockfile to drift, and no supply chain beyond the interpreter. 3.11 is the floor.
 
+The floor is `tomllib`, and it binds the interpreter that *runs* dovetail - not the one `python3` happens to name. Those come apart more often than they should: Debian and Ubuntu carry 3.12 alongside a 3.10 default, so a machine can have everything dovetail needs and still fail every documented command with `ModuleNotFoundError: tomllib`.
+
+[`bootstrap.py`](../skills/dovetail/scripts/bootstrap.py) closes that gap by re-executing the original command line under the newest suitable interpreter on `PATH`. The two alternatives were both worse. Rewriting `python3` in SKILL.md at install time would break the live-symlink install, which is the property that lets an edit to SKILL.md take effect without reinstalling. Asking the user to repoint `python3` is a global change to their machine to satisfy one skill, and it strands whatever was pinned to the older interpreter - on a typical box that is every `pip install --user` package they already have.
+
+Re-exec keeps both properties: the host is untouched, and SKILL.md stays literal about what it runs. When no suitable interpreter exists it exits 2 naming the fix, because a checker that reports success when it could not run is the failure mode this tool exists to avoid.
+
 ## The judgement layer
 
 Everything above describes the deterministic half. The other half is six

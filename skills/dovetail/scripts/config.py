@@ -16,7 +16,14 @@ whose whole value is that you can trust its output.
 from __future__ import annotations
 
 import os
-import tomllib
+
+import bootstrap
+
+# Must precede the tomllib import: tomllib is the 3.11 floor, and this re-execs
+# under a newer interpreter when `python3` is older than that.
+bootstrap.ensure()
+
+import tomllib  # noqa: E402
 
 CONFIG_REL = os.path.join('.dovetail', 'config.toml')
 

@@ -103,7 +103,8 @@ cd dovetail-skill
 ```
 
 **Nothing to install beyond that.** Python 3.11+ and `git`; no virtualenv, no packages, no
-credentials.
+credentials. A 3.11+ interpreter anywhere on your `PATH` is enough - if `python3` itself is
+older, dovetail re-execs under the newer one rather than asking you to change your machine.
 
 ## Usage
 
@@ -166,7 +167,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 399 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 408 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

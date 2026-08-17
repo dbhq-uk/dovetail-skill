@@ -229,6 +229,11 @@ Python 3.11 or newer, and `git`. No third-party packages, no virtualenv, no lock
 key and no network for the deterministic layer. The judgement layer needs a model; everything
 else runs without one.
 
+The floor applies to whichever interpreter runs dovetail, which need not be the one `python3`
+names. If `python3` is older than 3.11, dovetail re-execs under the newest suitable interpreter
+on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothing on the host
+has to change. If there is no such interpreter, it exits `2` and names the fix.
+
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 399 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 408 tests, no model calls, no network
 ```
