@@ -10,7 +10,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)](https://code.claude.com/docs/en/plugins)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL-lightgrey)]()
 
-A free, open-source tool by [DBHQ](https://dbhq.uk)
+A free, open-source tool by [DBHQ](https://dbhq.uk) - documented at [skills.dbhq.uk](https://skills.dbhq.uk/dovetail/)
 
 </div>
 
@@ -106,6 +106,16 @@ cd dovetail-skill
 credentials. A 3.11+ interpreter anywhere on your `PATH` is enough - if `python3` itself is
 older, dovetail re-execs under the newer one rather than asking you to change your machine.
 
+## Requirements
+
+**Python 3.11 or newer, and `git`.** Standard library only - no virtualenv, no
+packages, no credentials, and nothing to install beyond the interpreter. A
+3.11+ interpreter anywhere on your `PATH` is enough; `python3` itself does not
+have to be that version.
+
+The exact layer needs no model and no network either, which is what lets it
+run on every pull request.
+
 ## Usage
 
 Ask in any session: *"run dovetail on this repo"*. It scans, shows you what is certain first,
@@ -176,6 +186,32 @@ Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/
 
 The skill itself is [`skills/dovetail/SKILL.md`](skills/dovetail/SKILL.md).
 
-## License
+## Also from DBHQ
+
+Sixteen free agent skills, all of them installable from the same marketplace and
+all documented at **[skills.dbhq.uk](https://skills.dbhq.uk)**. The marketplace
+itself is [dbhq-uk/marketplace](https://github.com/dbhq-uk/marketplace) - one
+`/plugin marketplace add` and every one of them is available.
+
+| Skill | What it does |
+|---|---|
+| [outlook](https://skills.dbhq.uk/outlook/) | Microsoft 365 mail and calendar, from the terminal |
+| [trello](https://skills.dbhq.uk/trello/) | Your boards, run from your agent |
+| [legwork](https://skills.dbhq.uk/legwork/) | Research that settles a decision, and says when it cannot |
+| [verve](https://skills.dbhq.uk/verve/) | Strips AI tells from prose and puts a voice back |
+| [vela](https://skills.dbhq.uk/vela/) | Compiler-exact code search, in any language you index |
+| [garmin](https://skills.dbhq.uk/garmin/) | Your Garmin data, answered in the terminal |
+| [imager](https://skills.dbhq.uk/imager/) | Images from GPT Image 2, costed before it spends |
+| [gitview](https://skills.dbhq.uk/gitview/) | Which branches are finished, and which only look like it |
+| [atlassian](https://skills.dbhq.uk/atlassian/) | Jira issues and Confluence pages |
+| [pennyblack](https://skills.dbhq.uk/pennyblack/) | A physical letter, posted from the terminal |
+| [buildwork](https://skills.dbhq.uk/buildwork/) | Your open issues, run as parallel agents |
+| [deskwork](https://skills.dbhq.uk/deskwork/) | What an agent noticed, tracked as real work |
+| [groupwork](https://skills.dbhq.uk/groupwork/) | A second agent on the work, adversary or partner |
+| [headwork](https://skills.dbhq.uk/headwork/) | One decision at a time, with a recommendation |
+
+Plus [heliograph](https://skills.dbhq.uk/heliograph/), for a machine you cannot log into.
+
+## Licence
 
 [MIT](LICENSE) © 2026 DBHQ Consulting Ltd
