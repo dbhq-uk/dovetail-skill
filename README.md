@@ -116,6 +116,34 @@ have to be that version.
 The exact layer needs no model and no network either, which is what lets it
 run on every pull request.
 
+## What it finds
+
+Real output, from running the exact layer on this repository:
+
+```
+$ python3 skills/dovetail/scripts/scan.py . --format json
+
+1 finding
+
+[low / decoupled] AGENTS.md and skills/dovetail/SKILL.md changed together in
+6 of their last commits (86% coupling), but have changed apart 3 times since.
+
+  suggestion  Check whether the recent changes to one should have been
+              mirrored in the other.
+  evidence    AGENTS.md - changed with SKILL.md 6 times
+              skills/dovetail/SKILL.md - changed with AGENTS.md 6 times
+  confidence  high
+```
+
+No linter finds that one. Both files are valid, neither has a broken link, and
+nothing about either is wrong on its own - the signal is entirely in the
+history, which is that two files behaved as a pair for six commits and then
+stopped. It is the kind of drift you only notice when the document is already
+wrong.
+
+Nothing here is a judgement call: the exact layer runs in Python with no model
+and no network, so this finding is reproducible by anyone who clones the repo.
+
 ## Usage
 
 Ask in any session: *"run dovetail on this repo"*. It scans, shows you what is certain first,
