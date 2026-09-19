@@ -154,7 +154,9 @@ the strongest model. *"quick"* skips the reviewers entirely and gives you the ex
 only, for free.
 
 Each finding arrives as a question box: apply the fix, skip it, mark it intentional, or batch
-the whole class in one confirmation. Where the evidence names a winner, one option is marked
+the whole class in one confirmation.
+
+Where the evidence names a winner, one option is marked
 **(Recommended)** and says what makes it the answer. Where it does not, nothing is marked and
 you get an open question - a tool that recommends on every finding teaches you to stop reading.
 
@@ -187,6 +189,7 @@ in [gating a build](docs/guides/ci.md).
 `.dovetail/config.toml` holds ignore globs, the model profile, per-check toggles and
 per-reviewer overrides. `.dovetail/decisions.jsonl` records findings you have accepted as
 intentional; it is committed, so a judgement made once applies to your colleagues and to CI.
+
 Repo-specific rules go in `.dovetail/checks/*.py` as modules exposing `check(inventory, graph)`
 - written there, "these three tables must stay in sync" is exact and free rather than something
 a model might notice. This repository ships three as worked examples.
