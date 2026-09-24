@@ -16,6 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # No `version` in plugin.json, on purpose (24 Sep 2026). Claude Code only
+      # updates an installed plugin when this field changes, it was never bumped,
+      # and marketplace installs sat on old code for weeks. With no version the
+      # commit is the version, so every merge to main reaches users.
+      - name: plugin.json carries no version
+        run: jq -e 'has("version") | not' .claude-plugin/plugin.json > /dev/null
+
       - name: Validate plugin manifest is valid JSON
         run: jq empty .claude-plugin/plugin.json
 
