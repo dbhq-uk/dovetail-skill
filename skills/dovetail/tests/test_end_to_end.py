@@ -218,6 +218,35 @@ class TestTypeScriptImports(unittest.TestCase):
         self.assertNotIn('src/lib/helpers/index.ts', orphans)
 
 
+class TestGitHubAnchors(unittest.TestCase):
+    """Links that work on GitHub must not be reported as dangling."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = tempfile.mkdtemp()
+        git(cls.repo, 'init', '-q', '-b', 'main')
+        write(cls.repo, 'guide.md',
+              '# Guide\n\n## Café\n\n## `--offline` flag\n\n'
+              '<a id="custom"></a>\n\nText.\n')
+        write(cls.repo, 'README.md',
+              '# Readme\n\n'
+              'See [café](guide.md#caf%C3%A9), [offline](guide.md#--offline-flag), '
+              '[custom](guide.md#custom) and [gone](guide.md#not-there).\n')
+        git(cls.repo, 'add', '-A')
+        git(cls.repo, 'commit', '-qm', 'init')
+        cls.result = run_scan(cls.repo)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.repo, ignore_errors=True)
+
+    def test_only_the_broken_anchor_is_reported(self):
+        dangling = [f['problem'] for f in self.result['findings']
+                    if f['category'] == 'dangling_anchor']
+        self.assertEqual(len(dangling), 1, dangling)
+        self.assertIn('#not-there', dangling[0])
+
+
 class TestStdlibOnly(unittest.TestCase):
     def test_no_third_party_imports(self):
         """Every dovetail module must import stdlib or a sibling module only."""

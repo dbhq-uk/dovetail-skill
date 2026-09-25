@@ -39,7 +39,7 @@ For `[checks]`. These are the function names, so a disabled check is traceable t
 | Name | What it finds |
 |---|---|
 | `broken_links` | links whose target does not exist |
-| `dangling_anchors` | `#anchor` links to a heading that is not there |
+| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there |
 | `orphans` | files nothing references |
 | `exact_duplicates` | byte-identical files |
 | `near_duplicates` | files that are nearly identical |

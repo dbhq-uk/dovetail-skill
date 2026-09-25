@@ -32,7 +32,7 @@ import re
 import sys
 from urllib.parse import unquote
 
-from slugify import heading_slugs, track_fence
+from slugify import anchor_ids, track_fence
 
 TEXT_MODALITIES = {'text', 'vector_diagram'}
 
@@ -290,7 +290,8 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
             continue
 
         if path.lower().endswith(('.md', '.markdown')):
-            headings[path] = heading_slugs(body)
+            # Every anchor a link can land on: heading ids and HTML ids.
+            headings[path] = anchor_ids(body)
 
         allowed = _kinds_for(path)
 

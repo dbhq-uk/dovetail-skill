@@ -62,7 +62,12 @@ item names a file changed since the ref.
 
 **Slugs.** `slugify` implements GitHub's heading-anchor algorithm, because GitHub is what
 actually renders the documents. An anchor checker that uses a *reasonable* slug algorithm
-reports links that work perfectly well.
+reports links that work perfectly well. The id comes from the heading's rendered text (link
+text without its URL, code without its backticks), keeps leading and trailing hyphens, and
+covers setext and HTML headings. `id` and `name` attributes count as anchors too, a fragment
+is percent-decoded before it is compared, and `#top` and line anchors such as `#L10` always
+exist. The rules are tested against ids GitHub itself rendered, kept in
+`skills/dovetail/tests/fixtures/github_anchors.json`.
 
 **Globs.** `globmatch` exists because Python's `fnmatch` treats `**` as `*`, which would make
 `vendor/**` match across path separators incorrectly. Ignore patterns behave the way you
