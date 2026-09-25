@@ -10,11 +10,15 @@ the decisions ledger is machine-owned, and neither format has to do both jobs.
 
 A malformed config is reported, never silently ignored: a typo that quietly
 disabled half the checks would be the worst possible failure mode for a tool
-whose whole value is that you can trust its output.
+whose whole value is that you can trust its output. That covers names as well
+as types: `stale_todo = false` names no check, so it would disable nothing
+while the user believed it had. Every key and value is checked against what
+exists, and a near miss is named.
 """
 
 from __future__ import annotations
 
+import difflib
 import os
 
 import bootstrap
@@ -48,6 +52,36 @@ HEURISTIC_CHECKS = frozenset({
 })
 
 VALID_PROFILES = frozenset({'default', 'cheap', 'thorough'})
+VALID_MODELS = ('haiku', 'sonnet', 'opus')
+VALID_EFFORTS = ('low', 'medium', 'high')
+REVIEWER_KEYS = ('enabled', 'model', 'effort')
+
+
+def known_checks() -> list[str]:
+    """The name of every built-in check, as `[checks]` and `[gate]` take it."""
+    # Imported here, not at the top: the check modules are heavier than this
+    # one, and nothing else in this module needs them.
+    import cochange
+    import convcheck
+    import exactcheck
+    import graphcheck
+    return [check.__name__ for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
+                                          + convcheck.ALL_CHECKS + cochange.ALL_CHECKS)]
+
+
+def known_reviewers() -> list[str]:
+    """The name of every reviewer, as `[reviewers.<name>]` takes it."""
+    from reviewer import ROSTER
+    return list(ROSTER)
+
+
+def _unknown(where: str, kind: str, name: str, valid) -> ConfigError:
+    """An error naming the bad name, the nearest valid one, and the full list."""
+    valid = sorted(valid)
+    near = difflib.get_close_matches(str(name), valid, n=1, cutoff=0.6)
+    hint = f' Did you mean `{near[0]}`?' if near else ''
+    return ConfigError(f'{where}: `{name}` is not a {kind}.{hint} '
+                       f"Valid: {', '.join(valid)}.")
 
 
 class ConfigError(ValueError):
@@ -76,6 +110,10 @@ def load_config(repo_root: str) -> dict:
     except OSError as exc:
         raise ConfigError(f'{CONFIG_REL} could not be read: {exc}') from exc
 
+    for key in raw:
+        if key not in DEFAULTS:
+            raise _unknown(CONFIG_REL, 'setting', key, DEFAULTS)
+
     if 'ignore' in raw:
         if not isinstance(raw['ignore'], list) or not all(
                 isinstance(item, str) for item in raw['ignore']):
@@ -93,7 +131,10 @@ def load_config(repo_root: str) -> dict:
     if checks is not None:
         if not isinstance(checks, dict):
             raise ConfigError('`[checks]` must be a table of name = true/false')
+        valid_checks = known_checks()
         for name, enabled in checks.items():
+            if name not in valid_checks:
+                raise _unknown('[checks]', 'check', name, valid_checks)
             if not isinstance(enabled, bool):
                 raise ConfigError(f'`checks.{name}` must be true or false')
         config['checks'] = dict(checks)
@@ -105,6 +146,8 @@ def load_config(repo_root: str) -> dict:
         for name, enabled in gate.items():
             if not isinstance(enabled, bool):
                 raise ConfigError(f'`gate.{name}` must be true or false')
+            if name not in known_checks():
+                raise _unknown('[gate]', 'heuristic check', name, HEURISTIC_CHECKS)
             if name not in HEURISTIC_CHECKS:
                 raise ConfigError(
                     f'`gate.{name}`: only a heuristic check can be opted into the '
@@ -116,9 +159,22 @@ def load_config(repo_root: str) -> dict:
     if reviewers is not None:
         if not isinstance(reviewers, dict):
             raise ConfigError('`[reviewers]` must be a table of per-reviewer tables')
+        valid_reviewers = known_reviewers()
         for name, settings in reviewers.items():
+            if name not in valid_reviewers:
+                raise _unknown('[reviewers]', 'reviewer', name, valid_reviewers)
             if not isinstance(settings, dict):
                 raise ConfigError(f'`[reviewers.{name}]` must be a table')
+            for key, value in settings.items():
+                if key not in REVIEWER_KEYS:
+                    raise _unknown(f'[reviewers.{name}]', 'setting', key, REVIEWER_KEYS)
+            if 'enabled' in settings and not isinstance(settings['enabled'], bool):
+                raise ConfigError(f'`reviewers.{name}.enabled` must be true or false')
+            for key, allowed in (('model', VALID_MODELS), ('effort', VALID_EFFORTS)):
+                if key in settings and settings[key] not in allowed:
+                    raise ConfigError(
+                        f'`reviewers.{name}.{key}` must be one of {", ".join(allowed)}; '
+                        f'got {settings[key]!r}')
         config['reviewers'] = {name: dict(settings)
                                for name, settings in reviewers.items()}
 
