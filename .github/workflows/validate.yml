@@ -71,7 +71,7 @@ jobs:
           sys.exit(0 if ok else 1)
           PY
 
-      # Constraint 1 of three (see AGENTS.md): deterministic only. A
+      # Constraint 1 (see AGENTS.md): the exact layer is deterministic. A
       # third-party import would mean packages to install, which breaks the
       # "nothing to set up" promise the README makes.
       - name: Scripts import nothing outside the standard library
@@ -95,7 +95,7 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
-      # Constraint 2: never write to the scanned repository. store.append_decision
+      # Constraint 2: the scan never writes to the scanned repository. store.append_decision
       # is called from one place: dovetail.py's `decide` verb, which runs only
       # when the user marks a finding intentional during triage. If it ever gains
       # a caller on the scan path, the tool has started editing people's

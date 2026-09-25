@@ -25,9 +25,10 @@ per line:
 to CI, so a finding you have accepted never comes back to block someone else's pull request.
 A local ignore list gives you none of that.
 
-**You append it yourself.** The scan has no write path into your repository at all. During a
-triage session dovetail offers to add the line for you, and that is the only circumstance in
-which it writes.
+**Triage writes the line for you, or you write it yourself.** When you mark a finding
+intentional during triage, dovetail appends the line. A line you add by hand in the same format
+works the same way. The scan itself only reads the ledger: it has no write path into your
+repository at all.
 
 Later lines override earlier ones for the same `id`, so changing your mind means appending,
 not editing. A malformed line is skipped rather than fatal - a hand-edited ledger cannot break

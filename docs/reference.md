@@ -248,8 +248,9 @@ Full commentary: [`references/config.md`](../skills/dovetail/references/config.m
 
 ## .dovetail/decisions.jsonl
 
-Committed, append-only, one JSON object per line. You append to it; dovetail only writes it
-when you approve a suppression during triage.
+Committed, append-only, one JSON object per line. dovetail appends to it when you mark a
+finding intentional or wontfix during triage, and you can append to it by hand. The scan only
+reads it.
 
 ```jsonl
 {"at":"2026-07-30","id":"sha256:…","reason":"why","summary":"human-readable echo","verdict":"intentional"}
@@ -291,5 +292,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 534 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 543 tests, no model calls, no network
 ```

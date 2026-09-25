@@ -27,8 +27,8 @@ The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill'
 ## 3. Verify
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v          # 534 tests, no network required
-python3 skills/dovetail/scripts/scan.py . --format json   # this repo must scan clean
+python3 -m pytest skills/dovetail/tests/ -v          # 543 tests, no network required
+python3 skills/dovetail/scripts/scan.py . --fail-on high  # no high findings here, as CI requires
 claude plugin validate .                             # the plugin metadata validates
 ```
 
