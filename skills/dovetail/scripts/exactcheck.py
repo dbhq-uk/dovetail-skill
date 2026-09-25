@@ -30,6 +30,7 @@ bootstrap.ensure()
 import tomllib  # noqa: E402
 from typing import Iterable  # noqa: E402
 
+import fixes  # noqa: E402
 from store import make_finding
 
 # ---------------------------------------------------------------------------
@@ -185,6 +186,9 @@ def flag_drift(inventory: dict, graph: dict) -> list[dict]:
                         if used in known:
                             continue
                         line_no = start_line + offset
+                        meant = fixes.one_close_match(used, flags)
+                        fix = (fixes.flag_fix(repo_root, entry['path'], line_no, used, meant)
+                               if meant else fixes.no_fix())
                         findings.append(make_finding(
                             source='check:flags',
                             category='flag_drift',
@@ -201,6 +205,7 @@ def flag_drift(inventory: dict, graph: dict) -> list[dict]:
                                         f'declared options, or add `--{used}` to {script}.'),
                             severity='medium',
                             claim=f'{script}|--{used}',
+                            fix=fix,
                         ))
     return findings
 

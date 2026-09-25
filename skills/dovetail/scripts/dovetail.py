@@ -25,10 +25,10 @@ which files that fix changed.
 
 Usage:
   dovetail.py scan [--repo PATH] [--since REF] [--ignore GLOB ...]
-  dovetail.py next [--repo PATH] [--json]
-  dovetail.py decide [--repo PATH] ID fix --files PATH [PATH ...]
-  dovetail.py decide [--repo PATH] ID skip
-  dovetail.py decide [--repo PATH] ID intentional|wontfix --reason TEXT [--summary TEXT]
+  dovetail.py next [--repo PATH] [--json | --batch]
+  dovetail.py decide [--repo PATH] ID [ID ...] fix --files PATH [PATH ...]
+  dovetail.py decide [--repo PATH] ID [ID ...] skip
+  dovetail.py decide [--repo PATH] ID [ID ...] intentional|wontfix --reason TEXT [--summary TEXT]
   dovetail.py check [--repo PATH]
   dovetail.py rescan [--repo PATH]
   dovetail.py prepare-review [--repo PATH] [--profile P] [--reviewer NAME ...]
@@ -54,6 +54,7 @@ import bootstrap
 bootstrap.ensure()
 
 import ci_dispatch  # noqa: E402
+import fixes  # noqa: E402
 from config import ConfigError  # noqa: E402
 from reviewer import (  # noqa: E402
     MATCH, MOVED, ValidationError, escalation_enabled, needs_escalation,
@@ -77,6 +78,11 @@ GONE = ('resolved', 'escalated')
 
 # Printed between what the user sees and what only the agent needs.
 AGENT_LINE = '=== for the agent, not the user ==='
+
+# Files named under a finding's blast radius; the rest are counted.
+RADIUS_SHOWN = 8
+# Findings shown together by `next --batch`. The rest wait for the next call.
+BATCH_SHOWN = 20
 
 
 class RunError(Exception):
@@ -305,9 +311,11 @@ def render_finding(entry: dict, index: int, total: int) -> str:
         lines += ['', '**Suggestion**', '', finding['suggestion'].strip()]
     radius = finding.get('blast_radius') or []
     if radius:
+        shown = ' · '.join(f'`{path}`' for path in radius[:RADIUS_SHOWN])
+        if len(radius) > RADIUS_SHOWN:
+            shown += f' and {len(radius) - RADIUS_SHOWN} more'
         lines += ['', f'**Blast radius** - {len(radius)} further '
-                      f"{'file cites' if len(radius) == 1 else 'files cite'} this",
-                  ' · '.join(f'`{path}`' for path in radius)]
+                      f"{'file cites' if len(radius) == 1 else 'files cite'} this", shown]
     return '\n'.join(lines)
 
 
@@ -431,6 +439,8 @@ def cmd_next(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(entry['finding'], indent=2, ensure_ascii=False))
         return 0
+    if args.batch:
+        return _print_batch(root, entry, queued)
     decided = sum(1 for e in live if e['status'] in DECIDED)
     print(render_finding(entry, decided + 1, len(live)))
     options, advice = options_for(entry)
@@ -441,32 +451,88 @@ def cmd_next(args: argparse.Namespace) -> int:
     for option in options:
         print(f'option     {option}')
     print(f'recommend  {advice}')
+    fix = entry['finding'].get('fix') or {}
+    if fix.get('kind') == 'edit':
+        print(f"fix        the scan computed one fix, the diff above, to {', '.join(fix['files'])}")
+    else:
+        print('fix        none computed; draft the edit and show it before applying it')
+    batch = _batch_of(entry, queued)
+    if len(batch) > 1:
+        print(f"batch      {len(batch)} queued {entry['finding']['category']} findings are "
+              f'batch_eligible. To offer them in one box: python3 {SCRIPT} next --batch '
+              f'--repo {root}')
+    else:
+        print('batch      no: fix this one on its own')
+    files = ' '.join(fix['files']) if fix.get('kind') == 'edit' else 'PATH...'
     print(f"record     python3 {SCRIPT} decide --repo {root} {entry['short']} "
-          'fix --files PATH... | skip | intentional --reason TEXT')
+          f'fix --files {files} | skip | intentional --reason TEXT')
+    return 0
+
+
+def _batch_of(entry: dict, queued: list[dict]) -> list[dict]:
+    """Queued findings that may be fixed together with `entry`: its batch_eligible class."""
+    finding = entry['finding']
+    if not finding.get('batch_eligible'):
+        return []
+    return [e for e in queued if e['finding'].get('batch_eligible')
+            and e['finding']['category'] == finding['category']]
+
+
+def _print_batch(root: str, entry: dict, queued: list[dict]) -> int:
+    """The combined diff of a batch_eligible class, for one box and one confirmation."""
+    batch = _batch_of(entry, queued)
+    if len(batch) < 2:
+        print('No batch: the next finding has to be fixed on its own. Run next.')
+        return 0
+    shown = batch[:BATCH_SHOWN]
+    combined = fixes.combine(root, [item['finding']['fix'] for item in shown])
+    if combined['kind'] != 'edit':
+        print('No batch: these fixes touch the same text, so they have to be made one at '
+              'a time. Run next.')
+        return 0
+    category = entry['finding']['category']
+    print(f'**{len(batch)} {category} findings, each with one mechanical fix**')
+    print()
+    print('```diff')
+    print(combined['diff'].rstrip('\n'))
+    print('```')
+    if len(batch) > len(shown):
+        print(f'\nThe other {len(batch) - len(shown)} come in the next batch.')
+    files = combined['files']
+    print()
+    print(AGENT_LINE)
+    print(f'header     {category[:12]}')
+    print(f'option     Apply all {len(shown)} - make every edit shown above')
+    print('option     One at a time - go through them with next')
+    print('recommend  none: a batch is the user\'s call')
+    print(f"record     python3 {SCRIPT} decide --repo {root} "
+          f"{' '.join(item['short'] for item in shown)} fix --files {' '.join(files)}")
     return 0
 
 
 def cmd_decide(args: argparse.Namespace) -> int:
     root = os.path.realpath(args.repo)
     state = load_state(root)
-    entry = find_entry(state, args.id)
-    finding = entry['finding']
+    entries = [find_entry(state, wanted) for wanted in args.ids]
     verdict = args.verdict
     status = 0
+    shorts = ', '.join(entry['short'] for entry in entries)
 
     if verdict in ('intentional', 'wontfix'):
         reason = (args.reason or '').strip()
         if not reason:
             raise RunError(f'{verdict} needs --reason: the ledger records why, '
                            'and a guessed reason is worse than none')
-        summary = (args.summary or finding['problem']).strip().split('\n')[0][:200]
-        append_decision(root, {
-            'id': finding['id'], 'verdict': verdict, 'reason': reason,
-            'at': datetime.date.today().isoformat(), 'summary': summary,
-        })
+        for entry in entries:
+            finding = entry['finding']
+            summary = (args.summary or finding['problem']).strip().split('\n')[0][:200]
+            append_decision(root, {
+                'id': finding['id'], 'verdict': verdict, 'reason': reason,
+                'at': datetime.date.today().isoformat(), 'summary': summary,
+            })
         snapshot = _load_snapshot(root)
         _accept(root, snapshot, [_relative(root, DECISIONS_REL)])
-        print(f"recorded {verdict} for {entry['short']} in {DECISIONS_REL}")
+        print(f'recorded {verdict} for {shorts} in {DECISIONS_REL}')
     elif verdict == 'fix':
         if not args.files:
             raise RunError('fix needs --files: every file the fix changed')
@@ -475,8 +541,8 @@ def cmd_decide(args: argparse.Namespace) -> int:
         unexpected = [path for path in changed_files(root, snapshot)
                       if path not in expected]
         _accept(root, snapshot, expected)
-        state['last_fix'] = finding['id']
-        print(f"recorded fix for {entry['short']} ({', '.join(expected)})")
+        state['last_fix'] = [entry['finding']['id'] for entry in entries]
+        print(f"recorded fix for {shorts} ({', '.join(expected)})")
         if unexpected:
             print('STOP: these files changed and dovetail did not change them:')
             for path in unexpected[:20]:
@@ -488,9 +554,10 @@ def cmd_decide(args: argparse.Namespace) -> int:
         else:
             print(f'Now run: python3 {SCRIPT} rescan --repo {root}')
     else:
-        print(f"skipped {entry['short']} for this run")
+        print(f'skipped {shorts} for this run')
 
-    entry['status'] = verdict
+    for entry in entries:
+        entry['status'] = verdict
     save_state(root, state)
     return status
 
@@ -541,15 +608,17 @@ def cmd_rescan(args: argparse.Namespace) -> int:
     for key in ('file_count', 'edge_count', 'suppressed', 'failed_checks'):
         state['summary'][key] = result[key]
 
-    last = state.get('last_fix')
-    last_entry = entries.get(last) if last else None
+    last = state.get('last_fix') or []
+    last = [last] if isinstance(last, str) else last
     save_state(root, state)
 
-    by_fix = [e for e in resolved if e['finding']['id'] != last]
+    by_fix = [e for e in resolved if e['finding']['id'] not in last]
     remaining = len(_queued(state))
-    if last_entry is not None and last_entry['layer'] == 'exact' and last in now:
-        print(f"! the fix for {last_entry['short']} did not resolve it: "
-              f"{_where(last_entry['finding'])} is still reported")
+    for fixed in last:
+        fixed_entry = entries.get(fixed)
+        if fixed_entry is not None and fixed_entry['layer'] == 'exact' and fixed in now:
+            print(f"! the fix for {fixed_entry['short']} did not resolve it: "
+                  f"{_where(fixed_entry['finding'])} is still reported")
     if by_fix:
         places = ', '.join(_where(e['finding']) for e in by_fix[:6])
         more = f' and {len(by_fix) - 6} more' if len(by_fix) > 6 else ''
@@ -817,10 +886,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser('next', parents=[common], help='show the next finding')
     p.add_argument('--json', action='store_true', help='the raw finding instead')
+    p.add_argument('--batch', action='store_true',
+                   help="the combined diff of the next finding's batch_eligible class")
     p.set_defaults(run=cmd_next)
 
     p = sub.add_parser('decide', parents=[common], help='record a decision')
-    p.add_argument('id', help='finding id, as printed by next')
+    p.add_argument('ids', nargs='+', metavar='ID',
+                   help='finding id, as printed by next; several for a batch')
     p.add_argument('verdict', choices=DECIDED)
     p.add_argument('--reason', help='why; required for intentional and wontfix')
     p.add_argument('--summary', help='one line for the ledger (default: the problem)')

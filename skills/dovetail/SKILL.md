@@ -90,7 +90,7 @@ Always show the exact/judgement split and the suppressed count. Nothing is ever 
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py next --repo <repo-path>
 ```
 
-`next` prints the next finding in queue order: blast radius, then severity, then confidence, certain before judged. Everything above the line `=== for the agent, not the user ===` is the finding, rendered as markdown. **Show it to the user exactly as printed, then the question box.** Nothing between them, nothing after, and never wrap the finding in a code block. Everything below the line is for you: the id, the box header, the options, and whether one option may be recommended.
+`next` prints the next finding in queue order: the size of its `blast_radius` (the other files that cite the file it is in), then severity, then confidence, exact before judged. The scan fills `blast_radius`, so never re-rank the queue yourself. Everything above the line `=== for the agent, not the user ===` is the finding, rendered as markdown. **Show it to the user exactly as printed, then the question box.** Nothing between them, nothing after, and never wrap the finding in a code block. Everything below the line is for you: the id, the box header, the options, whether one option may be recommended, whether the scan computed a `fix`, and whether the finding is `batch_eligible`.
 
 `next --json` prints the raw finding, for `explain`.
 
@@ -120,7 +120,7 @@ Never recommend a fix that deletes anything, or between options that are not com
 
 ### Writing the box
 
-For an exact finding the options are the actions. For a judged one the options **are** the candidate resolutions, not fix and skip:
+For an exact finding the options are the actions. When `next` says the scan computed a fix, the diff above the line is that fix: apply exactly it. When it says none was computed, draft the edit and show it before applying it. For a judged one the options **are** the candidate resolutions, not fix and skip:
 
 ```
 header    contradictn
@@ -146,6 +146,7 @@ Every value is an argument, never code, so a reason may hold any quote mark. Quo
 | skip for this run | `decide --repo <repo-path> <id> skip` |
 | intentional or wontfix | `decide --repo <repo-path> <id> intentional --reason "<why>"` |
 | fix, after applying it | `decide --repo <repo-path> <id> fix --files <every file the fix changed>` |
+| a batch, after applying it | the `record` line `next --batch` prints: every id, then `fix --files` |
 | `quit` | stop, and say how many remain (`next` shows `[k/N]`) |
 
 `intentional` and `wontfix` append to `.dovetail/decisions.jsonl` and the finding never surfaces again. `--summary "<one line>"` overrides the default summary, which is the finding's problem sentence.
@@ -162,9 +163,15 @@ It says which queued findings the fix resolved, whether the fix resolved its own
 
 ### Batch-approve
 
-`all <category>` applies every finding in a class that has exactly one mechanically correct fix, such as a link where exactly one file matches the basename. Show the combined diff, then offer it as an option on the first finding of that class. One box, one confirmation, the whole class.
+A finding whose `batch_eligible` is true can be fixed together with the rest of its class. The scan sets it only for an exact finding with exactly one computed fix that deletes nothing, such as a link where exactly one file in the repository has the target's name. So there is no choice to make. When `next` says a class is `batch_eligible`, run:
 
-Never batch when `ssot_direction` is `uncertain`, when a choice exists, when the source is a reviewer, or when the fix deletes anything. Deletions are always individual and always confirmed.
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py next --batch --repo <repo-path>
+```
+
+It prints the combined diff, then the box header and options. Show the diff exactly as printed and ask once: one box, one confirmation, the whole class. If the user approves, apply every edit shown, then run the one `record` line it prints.
+
+Never batch a finding whose `batch_eligible` is false. That covers a reviewer's finding, an uncertain `ssot_direction`, a finding with two or more candidate fixes, and any fix that deletes. Deletions are always individual and always confirmed.
 
 ## Write safety
 

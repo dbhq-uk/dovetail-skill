@@ -150,7 +150,7 @@ class TestPlantedDefects(unittest.TestCase):
         # A scan finding also names the check that made it and its tier.
         required = {'id', 'source', 'category', 'problem', 'evidence', 'suggestion',
                     'fix', 'blast_radius', 'severity', 'confidence', 'ssot_direction',
-                    'check', 'tier'}
+                    'check', 'tier', 'batch_eligible'}
         for finding in self.result['findings']:
             self.assertEqual(set(finding), required, finding['category'])
             self.assertIn(finding['tier'], {'proven', 'heuristic'})

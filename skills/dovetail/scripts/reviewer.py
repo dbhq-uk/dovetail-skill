@@ -420,6 +420,7 @@ def _validate_one(finding: object, where: str, reviewer: str,
         finding['source'] = f'reviewer:{reviewer}'
         finding.setdefault('fix', {'kind': 'none'})
         finding.setdefault('blast_radius', [])
+        finding['batch_eligible'] = False  # a reviewer's finding is never batched
         # The reviewer does not invent the id: it is derived here, from the
         # same fingerprint function the deterministic layer uses, so a decision
         # recorded against a finding suppresses it whichever layer found it.
