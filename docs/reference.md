@@ -107,7 +107,7 @@ disabled check is traceable to the code implementing it.
 | Name | What it finds | Source |
 |---|---|---|
 | `broken_links` | Links whose target does not exist | `graph` |
-| `dangling_anchors` | `#anchor` links to a heading that is not there | `graph` |
+| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there | `graph` |
 | `orphans` | Files nothing references | `graph` |
 | `exact_duplicates` | Byte-identical files | `graph` |
 | `near_duplicates` | Files that are nearly identical | `graph` |
@@ -242,5 +242,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 461 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 477 tests, no model calls, no network
 ```

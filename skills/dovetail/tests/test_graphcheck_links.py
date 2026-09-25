@@ -122,6 +122,33 @@ class TestDanglingAnchors(unittest.TestCase):
                  'inbound': {}, 'headings': {}}
         self.assertEqual(dangling_anchors(inv(['README.md']), graph), [])
 
+    def test_a_percent_encoded_anchor_is_decoded_before_comparing(self):
+        graph = {
+            'edges': [edge('README.md', 3, 'docs/a.md#caf%C3%A9', 'docs/a.md',
+                           'caf%C3%A9')],
+            'inbound': {}, 'headings': {'docs/a.md': ['café']},
+        }
+        self.assertEqual(dangling_anchors(inv(['README.md', 'docs/a.md']), graph), [])
+
+    def test_top_and_line_anchors_always_exist(self):
+        for anchor in ('top', 'L10', 'L10-L20', 'L3C1-L4C9'):
+            with self.subTest(anchor=anchor):
+                graph = {
+                    'edges': [edge('README.md', 3, f'docs/a.md#{anchor}',
+                                   'docs/a.md', anchor)],
+                    'inbound': {}, 'headings': {'docs/a.md': ['install']},
+                }
+                self.assertEqual(
+                    dangling_anchors(inv(['README.md', 'docs/a.md']), graph), [])
+
+    def test_a_line_anchor_lookalike_is_still_checked(self):
+        graph = {
+            'edges': [edge('README.md', 3, 'docs/a.md#Lten', 'docs/a.md', 'Lten')],
+            'inbound': {}, 'headings': {'docs/a.md': ['install']},
+        }
+        self.assertEqual(
+            len(dangling_anchors(inv(['README.md', 'docs/a.md']), graph)), 1)
+
     def test_suggestion_names_the_available_anchors(self):
         graph = {
             'edges': [edge('README.md', 3, 'docs/a.md#nope', 'docs/a.md', 'nope')],

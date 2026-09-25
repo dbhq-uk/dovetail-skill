@@ -51,8 +51,8 @@ complete.
 `all_paths` and read content from `files`.
 
 `graph` has three keys: `edges` (each recording where a reference came from, how it was
-written and what it resolved to), `inbound` (the reverse index), and `headings` (slugs per
-document). Use it when your rule is about references; `all_paths` is usually enough when it is
+written and what it resolved to), `inbound` (the reverse index), and `headings` (every anchor
+id per markdown document: heading slugs, plus `id` and `name` attributes in its HTML). Use it when your rule is about references; `all_paths` is usually enough when it is
 about existence.
 
 ## What you must return

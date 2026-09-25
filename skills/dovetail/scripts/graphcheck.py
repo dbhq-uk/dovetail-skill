@@ -15,6 +15,7 @@ import os
 import posixpath
 import re
 from datetime import datetime
+from urllib.parse import unquote
 
 from dynref import dynamically_referenced
 from store import make_finding
@@ -85,8 +86,29 @@ def broken_links(inventory: dict, graph: dict) -> list[dict]:
     return findings
 
 
+# GitHub line anchors, `#L10`, `#L10-L20` and the column form `#L10C2-L12C5`.
+_LINE_ANCHOR = re.compile(r'L\d+(?:C\d+)?(?:-L\d+(?:C\d+)?)?')
+
+
+def _anchor_exists(anchor: str, available: list[str]) -> bool:
+    """Whether a link's fragment lands on something in the target document.
+
+    The fragment is percent-decoded first: `#caf%C3%A9` is how a link to a
+    `Café` heading is often written, and it works on GitHub. `#top` is the
+    top of any page, by the HTML standard, and line anchors work on every
+    file GitHub shows as source.
+    """
+    decoded = unquote(anchor)
+    return (anchor in available or decoded in available
+            or decoded.lower() == 'top' or bool(_LINE_ANCHOR.fullmatch(decoded)))
+
+
 def dangling_anchors(inventory: dict, graph: dict) -> list[dict]:
-    """Links to a heading anchor that the target document does not define."""
+    """Links to an anchor that the target document does not define.
+
+    `graph['headings']` holds every anchor a markdown file defines: the ids
+    GitHub gives its headings, and `id` and `name` attributes in its HTML.
+    """
     grouped: dict[tuple[str, str, str], list[dict]] = {}
     for edge in graph['edges']:
         if edge['kind'] not in LINK_KINDS:
@@ -95,8 +117,8 @@ def dangling_anchors(inventory: dict, graph: dict) -> list[dict]:
         if dst is None or not anchor:
             continue
         if dst not in graph['headings']:
-            continue  # not a markdown file — no anchors to check against
-        if anchor in graph['headings'][dst]:
+            continue  # not a markdown file - no anchors to check against
+        if _anchor_exists(anchor, graph['headings'][dst]):
             continue
         grouped.setdefault((edge['src'], dst, anchor), []).append(edge)
 
