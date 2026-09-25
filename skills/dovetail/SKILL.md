@@ -193,7 +193,7 @@ The scan itself never writes. Only the triage loop does, and only on approval.
 Everything degrades; nothing crashes.
 
 - A shard that errors or returns malformed output → named, run continues
-- A `.dovetail/checks/` plugin that raises → named in the summary, skipped
+- A check or a `.dovetail/checks/` plugin that raises → named in the summary, and its findings are missing. Under `--fail-on` the scan exits `1`
 - git not installed → **exit 2**, naming the missing binary. There is no scan without it
 - `--since` against an unresolvable ref → **exit 2, loudly**
 
