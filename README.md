@@ -62,8 +62,9 @@ actual line in the file. A model inventing a plausible quote at a plausible line
 damaging failure available, because the finding reads exactly like a true one.
 
 **It never edits without asking.** The scan itself has no write path at all. Fixes happen only
-in the triage loop, only one at a time, and only on your say-so - and dovetail checks `git
-status` between edits, so if anything changes that it did not apply, the run stops.
+in the triage loop, only one at a time, and only on your say-so - and dovetail compares a
+content hash of every file between edits, so if anything changes that it did not apply, the run
+stops.
 
 **It does not guess which side is right.** *What disagrees* is decidable. *Which side is
 correct* usually is not: a broken link might mean the link is wrong or the target was deleted
@@ -208,7 +209,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 488 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 531 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

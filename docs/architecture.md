@@ -119,7 +119,9 @@ repository - counts as fabricated, never as a pass.
 ## Two dispatch paths, one contract
 
 Reviewers are dispatched two ways: in-session subagents driven by `SKILL.md`, and the headless
-`ci_dispatch.py` used by the scheduled job. Both validate against the same written contract in
+`ci_dispatch.py` used by the scheduled job. Interactively, `dovetail.py prepare-review` writes
+one prompt file per shard, the same batches and the same prompt the scheduled job builds, and
+`dovetail.py import-review` validates what the subagents write back. Both validate against the same written contract in
 `references/finding-schema.md`, and both read the roster and tiering from `reviewer.py`.
 
 A schema change that broke one path while the other stayed green is precisely what having one
@@ -129,10 +131,13 @@ written contract prevents. The same instinct produced the repo-local check that 
 ## Write safety
 
 The scan has no write path into the target repository at all. Fixes happen only in the triage
-loop, only one at a time, and only on approval - and the loop captures `git status --porcelain`
-before the first write and re-checks after each fix. If anything changed that dovetail did not
-apply, the run stops: something else is writing to the tree, and continuing risks conflicting
-edits.
+loop, only one at a time, and only on approval. `dovetail.py scan` snapshots a content hash of
+every file git can see, and the loop compares against it before each fix and after it. If
+anything changed that dovetail did not apply, the run stops: something else is writing to the
+tree, and continuing risks conflicting edits.
+
+It hashes content rather than comparing `git status --porcelain`, because porcelain cannot see a
+second edit to a file that is already modified. The line reads ` M file` before and after.
 
 If the target is not a git repository, dovetail refuses to write at all. There is no undo
 without git.

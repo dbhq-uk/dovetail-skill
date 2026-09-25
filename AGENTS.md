@@ -10,8 +10,8 @@ Guidance for AI agents (and people) working in this repository.
 
 ```
 .claude-plugin/plugin.json     # plugin manifest
-skills/dovetail/SKILL.md       # the skill: dispatch and the triage loop
-skills/dovetail/scripts/       # python, standard library only
+skills/dovetail/SKILL.md       # the skill: the conversation rules and the verbs it calls
+skills/dovetail/scripts/       # python, standard library only; dovetail.py drives a run
 skills/dovetail/references/    # the finding contract and one rubric per reviewer
 skills/dovetail/ci/            # workflow templates users copy into their own repo
 skills/dovetail/tests/         # offline, no model calls
@@ -33,10 +33,16 @@ or through [`ci_dispatch.py`](skills/dovetail/scripts/ci_dispatch.py) for the
 scheduled job. Rubrics live in `skills/dovetail/references/reviewers/`, loaded by name
 at dispatch time.
 
-**Layer 3, triage** - entirely in [`SKILL.md`](skills/dovetail/SKILL.md). No
-Python TUI: findings are rendered into the session as markdown, which makes the
-loop a conversation that can be interrupted and questioned rather than a modal
-application.
+**Layer 3, triage** - the conversation is in [`SKILL.md`](skills/dovetail/SKILL.md);
+the state is in [`dovetail.py`](skills/dovetail/scripts/dovetail.py). No Python
+TUI: findings are rendered into the session as markdown, which makes the loop a
+conversation that can be interrupted and questioned rather than a modal
+application. But the agent never reads the scan's JSON or the clusters: on a
+repository of about 900 files they fill most of its context before the first
+question. `dovetail.py` keeps the run on disk and each verb (`scan`, `next`,
+`decide`, `check`, `rescan`, `prepare-review`, `wave`, `import-review`) prints
+only what the next step needs. Every value reaches it as an argument, never
+pasted into code.
 
 CI templates: [`dovetail-pr.yml`](skills/dovetail/ci/dovetail-pr.yml)
 (deterministic, gates a merge) and
@@ -49,7 +55,7 @@ gates).
 Break any of these and it stops being the thing people can trust:
 
 1. **Deterministic only.** No model calls, no network, no third-party imports. A finding must follow from the structure of the repository. This is what makes it safe to fail a build on - a checker with false positives gets switched off within a week.
-2. **Never write to the scanned repository.** dovetail reports; it does not fix. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` exists as a helper and is deliberately not called from the scan path.
+2. **Never write to the scanned repository.** dovetail reports; it does not fix. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` is called only from `dovetail.py decide`, on the user's say-so during triage, and CI fails if anything on the scan path calls it.
 3. **Fail loudly, never silently pass.** `--since` against an unresolvable ref exits `2`. A check that reports success because it could not run is worse than no check.
 4. **Never hand a reviewer more than it can finish.** Work is sharded into batches of 20 files. A reviewer given the whole repository and one turn budget reads a handful of files and skips the rest in silence - which is indistinguishable from thoroughness in the output. This was measured: unsharded, a 474-file repo produced 24 judged findings; sharded, 149.
 5. **Never trust a quote, but do not confuse a moved one with an invented one.** Every piece of evidence a reviewer returns is checked against the actual line in the file. A fabricated quote at a plausible line reads exactly like a true finding, which makes it the most damaging failure available. The check resolves to four states - match, moved, stale, absent - because dovetail edits files during its own triage loop: a fix the user approved can rewrite the line a still-running reviewer quoted, and only the committed blob separates that from an invention. Calling it fabrication was measured costing ten sound findings in one run.
@@ -65,7 +71,7 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 488 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 531 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```

@@ -7,42 +7,47 @@ description: Check whether a repository agrees with itself, then work through th
 
 Checks whether a repository agrees with itself, and walks through what it finds.
 
-Two layers produce findings. **Exact** findings are computed in Python - links, anchors, orphans, duplicates, flag and signature drift, conventions, git-history signals. They are certain. **Judged** findings come from reviewers - contradictions, semantic staleness, spec drift, non-Python dead code. They are probabilistic.
+Two layers produce findings. **Exact** findings are computed in Python - links, anchors, orphans, duplicates, flag and signature drift, conventions, git-history signals. **Judged** findings come from reviewers - contradictions, semantic staleness, spec drift, non-Python dead code. They are probabilistic.
 
 The user must always know which they are looking at. Never blur the two.
 
-## Run
+## How a run is driven
+
+One script drives the whole run and keeps its state on disk, in `~/.dbhq/dovetail/`. Each verb prints only what the next step needs:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py <verb> --repo <repo-path>
+```
+
+**Never read the scan JSON, the clusters or a shard file yourself.** On a real repository they run to hundreds of kilobytes and would fill the context before the first question. Everything you need arrives through the verbs.
 
 ### 1. Scan (always)
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py <repo-path> --format json
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py scan --repo <repo-path>
 ```
 
-Seconds, no network, no model. Never modifies the target.
+It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, and findings by category. It also snapshots every file, for write safety. `--since REF` and `--ignore GLOB` work as they do for `scan.py`.
 
-Read the JSON: `findings`, `suppressed`, `counts`, `failed_checks`, `profile`, `file_count`, `edge_count`.
+If it exits `2`, report the error and stop. The repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
 
-If it exits `2`, report the error and stop - the repository is not a git checkout, or `.dovetail/config.toml` is invalid. Do not proceed on defaults; a config the user wrote is one they expect to take effect.
+### 2. Start the reviewers (unless the user said "quick" or "exact only")
 
-### 2. Dispatch the judgement reviewers (unless the user said "quick" or "exact only")
-
-Start these **before** triaging, so they land while the user works through the certain findings. Layer 1 finishes before the first reviewer returns, and a run abandoned after two minutes has still delivered every broken link and duplicate in the repository.
-
-Get the clusters the contradiction reviewer needs:
+Start them **before** triage, so they land while the user works through the certain findings.
 
 ```bash
-python3 -c "import sys; sys.path.insert(0, '${CLAUDE_SKILL_DIR}/scripts'); \
-from discover import discover; from refgraph import build_graph; from claimscan import build_clusters; \
-import json; inv=discover('<repo-path>'); print(json.dumps(build_clusters(inv, build_graph('<repo-path>', inv))))"
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py prepare-review --repo <repo-path>
 ```
 
-Then spawn one subagent per reviewer, in parallel. For each:
+This writes one prompt file per shard: 20 files, or 25 contradiction clusters. A reviewer handed a whole repository reads a few files and skips the rest in silence, which looks exactly like thoroughness. So never merge shards. The user's profile goes here as `--profile cheap` or `--profile thorough`.
 
-- Read its rubric from `${CLAUDE_SKILL_DIR}/references/reviewers/<name>.md`
-- Read the contract from `${CLAUDE_SKILL_DIR}/references/finding-schema.md`
-- Give it its context: clusters for `contradiction`, docs for `staleness` / `spec-flow` / `xref` / `convention`, code for `code-hygiene`
-- **Pass the model override explicitly.** Never let a reviewer inherit the orchestrator's model.
+Then hand the shards out in waves:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py wave --repo <repo-path>
+```
+
+A wave lists up to 4 shards (`--size 5` at most). For each one, spawn one background subagent with the model the wave names and the one-line prompt it prints. **Pass the model explicitly.** Never let a reviewer inherit yours. Never have more than one wave running.
 
 | Reviewer | Model | Effort |
 |---|---|---|
@@ -53,35 +58,17 @@ Then spawn one subagent per reviewer, in parallel. For each:
 | `staleness` | opus | high |
 | `spec-flow` | opus | high |
 
-Profiles: **cheap** drops every reviewer one tier and disables escalation; **thorough** puts everything on opus/high. The user speaks a profile ("run dovetail cheap"); `.dovetail/config.toml` sets the durable default and per-reviewer overrides, which win.
+Profiles: **cheap** drops every reviewer one tier and turns escalation off; **thorough** puts everything on opus/high. `.dovetail/config.toml` sets the durable default and per-reviewer overrides, which win.
 
-**Validate every reviewer's output** before it reaches the queue. Always pass `rejected`, so one bad finding quarantines itself instead of taking the sound ones with it:
+When a wave's agents have finished, import what they wrote, then hand out the next wave:
 
 ```bash
-python3 -c "import sys, json; sys.path.insert(0, '${CLAUDE_SKILL_DIR}/scripts'); \
-from reviewer import validate_findings; \
-r = []; out = validate_findings(open('<file>').read(), '<reviewer>', '<repo-path>', rejected=r); \
-print(json.dumps({'findings': out, 'rejected': r}))"
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py import-review --repo <repo-path>
 ```
 
-Every quote is checked against the actual line, and each piece of evidence lands in one of four states:
+Every quote is checked against the file. A quote at its line, or moved within the file, is kept. A quote that is only in the committed file is **stale**: dovetail's own fix rewrote the line. A quote in neither, or evidence that cannot be checked, is **fabricated**. One bad finding is dropped and named; the rest of that shard is queued. A shard whose output is not a JSON array has **failed**, and its findings are missing. Low-confidence findings from haiku or sonnet are held and come back in a later wave on opus, unless the profile is cheap.
 
-| State | Meaning | What happens |
-|---|---|---|
-| match | quote is at the cited line | kept |
-| moved | quote is elsewhere in the file | kept, line corrected silently |
-| stale | quote is in the committed file but not the working one | that finding dropped |
-| absent | quote is in neither, or cannot be checked | that finding dropped as **fabricated** |
-
-"Cannot be checked" is never a pass: an empty quote, a file that is missing or unreadable, and a path outside the repository all count as absent. A quote may run on from the cited line into the next lines of the same paragraph, and may carry punctuation the line lacks, but never a word the file does not hold.
-
-`stale` exists because dovetail edits files during its own triage loop. A fix the user approved can rewrite the very line a still-running reviewer quoted, and calling that fabrication throws away sound work - it was observed costing ten good findings in one run. Comparing against the committed blob separates a concurrent edit from an invention exactly, with no guessing from timestamps.
-
-**Report what was dropped, and say which kind.** `rejected` is not noise to swallow: fabrication means that reviewer is unreliable and is worth naming in the header, while stale means only that the tree moved and the finding can be re-checked by re-running it. Never present a filtered list as if it were complete.
-
-The other findings from that reviewer survive and go into the queue. The command itself fails only when the output is not a JSON array at all. Then nothing can be salvaged: that reviewer **failed**, and the header names it.
-
-Escalate any finding with `confidence: low` from a haiku or sonnet reviewer to opus before queueing it, unless the profile is `cheap`.
+**Report what was dropped, and say which kind.** Fabrication means that reviewer is unreliable, and is worth naming in the header. Stale means only that the tree moved. Never present a filtered list as if it were complete.
 
 ### 3. Header
 
@@ -89,128 +76,51 @@ Escalate any finding with `confidence: low` from a haiku or sonnet reviewer to o
 dovetail · <repo> · <file_count> files, <edge_count> references
 
   ✓ exact          9 findings   (2 high · 5 med · 2 low)
-  ⋯ judgement      running - contradiction, staleness, xref
+  ⋯ judgement      running - 107 shards, 4 out
   - suppressed     3 by prior decisions
 
 Starting with the 9 that are certain. More will join as reviewers land.
 ```
 
-Always show the exact/judgement split, always show the suppressed count. Nothing is ever hidden silently. Name any failed check or reviewer: `⚠ staleness failed - findings incomplete`.
+Always show the exact/judgement split and the suppressed count. Nothing is ever hidden silently. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
 
 ## Triage
 
-Order by **blast radius, then severity, then confidence**. Root causes before symptoms, so fixing one visibly shrinks the queue.
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py next --repo <repo-path>
+```
+
+`next` prints the next finding in queue order: blast radius, then severity, then confidence, certain before judged. Everything above the line `=== for the agent, not the user ===` is the finding, rendered as markdown. **Show it to the user exactly as printed, then the question box.** Nothing between them, nothing after, and never wrap the finding in a code block. Everything below the line is for you: the id, the box header, the options, and whether one option may be recommended.
+
+`next --json` prints the raw finding, for `explain`.
 
 ### One finding, one question box
 
-Render the finding as markdown, then ask for the decision with `AskUserQuestion`. The markdown carries the detail - quotes, diffs, blast radius - because the box cannot hold it. The box carries the choice and nothing else.
+Ask for the decision with `AskUserQuestion`. The markdown carries the detail, because the box cannot hold it. The box carries the choice and nothing else.
 
 Never put two findings in one box, and never ask for a decision in prose when the box is available. A typed `fix` is a verb the user has to remember; an option is one they can see.
 
 Every box:
 
-- `header` - the category, truncated to 12 characters (`broken_link`, `contradictn`)
-- `question` - the decision itself, phrased so it can be answered without scrolling back up to the evidence
+- `header` - the one `next` prints (the category, cut to 12 characters)
+- `question` - the decision itself, phrased so it can be answered without scrolling back up
 - `multiSelect: false`
-- two to four options, most likely first, each with a `description` saying what actually happens to the files
-- **never add an "Other" option.** It is supplied automatically, and spending an option on "something else" wastes a quarter of the box
+- two to four options, most likely first, each with a `description` saying what happens to the files
+- **never add an "Other" option.** It is supplied automatically
 
-`edit`, `intentional <reason>`, `explain` and `quit` arrive as free text through "Other". Read what the user typed and act on it - do not re-ask a question they have already answered.
+`edit`, `intentional <reason>`, `explain` and `quit` arrive as free text through "Other". Act on what the user typed. Do not re-ask a question they have already answered.
 
 ### Recommending an option
 
-Where the evidence names a winner, say so. Put that option **first** and append `(Recommended)` to its label. At most one option per box, ever.
+`next` says whether a recommendation is allowed, and why. When it says `none`, mark nothing. When it says `allowed`, you may put that option **first** with `(Recommended)` on its label. At most one per box, ever.
 
-A recommendation is a claim, so it carries its grounds: the `description` must say what makes it the answer, in the repository's own terms - which file is newer, which side the code agrees with, how many documents cite each value. "Best practice" is not grounds. If the description cannot name the evidence, the recommendation has not been earned.
+A recommendation is a claim, so it carries its grounds in the repository's own terms: which file is newer, which side the code agrees with, how many documents cite each value. "Best practice" is not grounds. For a judged finding, put the grounds in a **Why this side** block above the box.
 
-Recommend when:
-
-- the finding is **exact** and the fix is mechanical - there is nothing to argue about, so leaving the box unmarked is false modesty
-- the finding is **judged**, `ssot_direction` names a side, and the reviewer returned `confidence: high`
-
-Do **not** recommend when:
-
-- `ssot_direction` is `uncertain` - this is the case the whole conversation exists for
-- the reviewer returned `confidence: low`, or the finding was escalated and the escalation disagreed
-- the fix **deletes** anything
-- the options are not comparable - one edits docs, another edits code, a third says both are fine. That is a question about intent, and only the user holds it
-
-An unmarked box is a legitimate, common output. A recommendation on every finding trains the user to accept the first option without reading, which costs more than it saves the first time dovetail is confidently wrong.
-
-### Rendering a finding
-
-**Clean markdown, then the question box. Nothing between them, and nothing after.**
-
-The single worst thing you can do here is wrap the finding in one big fenced code block. It kills bold, it kills the clickable `path:line` link, and the moment a real repository hands you a path like `docs/guides/deployment/production/rollback.md` every hand-aligned column collapses. Fenced blocks are for **diffs only**.
-
-The shape, every time:
-
----
-
-**[3/9] contradiction · high** · judged · opus · high confidence
-
-Two documents disagree about the request timeout.
-
-**Evidence**
-
-`README.md:88`
-> requests time out after 30 seconds
-
-`docs/config.md:24`
-> the default timeout is 60s
-
-`src/client.py:31` - the code, agreeing with README
-> TIMEOUT = 30
-
-**Blast radius** - 2 further docs cite this value
-`docs/ja/config.md:24` · `docs/troubleshooting.md:112`
-
----
-
-Then the box, immediately.
-
-Rules that make the difference:
-
-- **One fact per line.** Never align two columns across lines; a long path silently ruins it.
-- **Path on its own line as inline code**, quote beneath it as a blockquote. This survives any path length and keeps the path clickable.
-- **Blank line between every block.** Density is not clarity.
-- **Bold labels** (`Evidence`, `Fix`, `Blast radius`, `Why this side`) so the eye can skip to the part it wants.
-- **Lead with the one-sentence problem**, before any evidence. The reader should be able to stop after that sentence and still know what is being asked.
-- **Quote what the file says, not a paraphrase**, and never truncate mid-claim. If a quote is too long to sit on one line, that is fine - let it wrap.
-- Trim the metadata line to what is true: an exact finding is `· exact` with no model or confidence; a judged one names the model and confidence; note it when two or more reviewers found the same thing independently, because that is real signal.
-
-An **exact** finding is terser - there is nothing to argue about, so it carries a `Fix` block instead of the reasoning:
-
----
-
-**[1/9] flag_drift · high** · exact
-
-`README.md:40` documents `--out`, but the script has no such flag.
-
-**Evidence**
-
-`README.md:40`
-> `--out FILE      write the report here`
-
-`scripts/run.py:12` - the only definition of the flag
-> `add_argument("--output", help="write the report here")`
-
-**Fix**
-
-```diff
-- --out FILE      write the report here
-+ --output FILE   write the report here
-```
-
----
-
-A **judged** finding gets a `Why this side` block whenever you are going to recommend an option - the grounds belong above the box, where there is room for them, not crammed into an option description.
-
-Where a batch class is live, print the combined diff under a **Fix all N in this class** heading before the box, then offer it as an option.
+Never recommend a fix that deletes anything, or between options that are not comparable: one edits docs, another edits code, a third says both are fine. That is a question about intent, and only the user holds it. An unmarked box is a normal answer. A recommendation on every finding trains the user to accept the first option without reading.
 
 ### Writing the box
 
-For an exact finding the options are the actions. For a judged one the options **are** the candidate resolutions, not `fix`/`skip` - the right answer is not knowable from the text alone, which is the whole reason this is a conversation and not a report.
+For an exact finding the options are the actions. For a judged one the options **are** the candidate resolutions, not fix and skip:
 
 ```
 header    contradictn
@@ -223,73 +133,51 @@ options   config.md is stale (Recommended)
           Both are correct      Different timeouts, badly named. Record why.
 ```
 
-The recommendation is earned here: `ssot_direction` names the stale side, two independent sources agree against it, and the reviewer returned high confidence. Strip the mark and the ordering the moment any of those three fails - a contradiction where the code is silent and both documents are the same age gets an unmarked, genuinely open box.
+Keep option descriptions to what happens to the files. The evidence is already above the box.
 
-Keep option descriptions to what actually happens to the files. The evidence is already above the box; do not restate it.
+An option that records a permanent ledger entry carries its reason. Where the reason is obvious from the repository, put it in the label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in one follow-up box. Never invent a reason: a ledger of guessed justifications is worse than one with gaps.
 
-An option that records a permanent ledger entry must carry the reason with it. Where the reason is obvious from the repository, put it in the option label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in a single follow-up box. Never invent a reason to avoid the follow-up: a ledger full of guessed justifications is worse than one with gaps.
+### Recording the decision
 
-"Other" already covers "something else - tell me", so it never occupies an option.
+Every value is an argument, never code, so a reason may hold any quote mark. Quote it for the shell as you would any argument. Each command follows `python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py`, and `next` prints the full line with the id filled in.
 
-Never present a guess as a decision, and never let the option order imply a verdict the evidence does not support.
+| Action | Command |
+|---|---|
+| skip for this run | `decide --repo <repo-path> <id> skip` |
+| intentional or wontfix | `decide --repo <repo-path> <id> intentional --reason "<why>"` |
+| fix, after applying it | `decide --repo <repo-path> <id> fix --files <every file the fix changed>` |
+| `quit` | stop, and say how many remain (`next` shows `[k/N]`) |
 
-### Actions
-
-| Action | Reached by | Effect |
-|---|---|---|
-| `fix` | option | apply the proposed edit |
-| `skip` | option | defer within this run |
-| `intentional <reason>` / `wontfix <reason>` | option | append to the ledger; never surfaces again |
-| `all <category>` | option, on the first finding of the class | batch-approve a class (see below) |
-| resolution 1..n | option, on a judged finding | apply that resolution |
-| `edit` | Other | user describes a different fix; apply that |
-| `explain` | Other | graph neighbourhood, git history, reviewer reasoning |
-| `quit` | Other | stop; say how many remain |
-
-The four options in any one box are chosen for that finding. A finding with no mechanical fix has no `fix` option; a judged finding offers resolutions instead. Do not pad a box to four options for symmetry.
-
-Record a decision:
-
-```bash
-python3 -c "import sys; sys.path.insert(0, '${CLAUDE_SKILL_DIR}/scripts'); \
-from store import append_decision; \
-append_decision('<repo-path>', {'id':'<finding id>','verdict':'intentional','reason':'<why>','at':'<YYYY-MM-DD>','summary':'<one line>'})"
-```
-
-Always fill `summary`. It is redundant to the machine and load-bearing for the human: without it the ledger is an unreadable list of hashes and nobody can audit their own past decisions.
+`intentional` and `wontfix` append to `.dovetail/decisions.jsonl` and the finding never surfaces again. `--summary "<one line>"` overrides the default summary, which is the finding's problem sentence.
 
 ### Cascade
 
-After each applied fix, **re-run the scan**. It is Python, so it is free. Drop findings the fix resolved and say so:
+After each fix, rescan. It is Python, so it is free:
 
-```
-✓ applied. 2 queued findings resolved by this fix
-  (docs/ja/config.md:24, docs/troubleshooting.md:112) - 4 remaining.
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py rescan --repo <repo-path>
 ```
 
-Without this the loop is whack-a-mole. With it, fixing a root cause visibly shrinks the queue - the difference between a session that finishes and one that gets abandoned.
+It says which queued findings the fix resolved, whether the fix resolved its own finding, and any new finding the fix introduced. Pass its line to the user. Without this the loop is whack-a-mole; with it, fixing a root cause visibly shrinks the queue.
 
 ### Batch-approve
 
-`all <category>` applies every finding in a class with exactly one mechanically correct fix - a relative link where precisely one file matches the basename, an anchor where precisely one heading slugifies to it. Print the combined diff, then offer it as an option on the first finding of that class. One box, one confirmation, the whole class.
+`all <category>` applies every finding in a class that has exactly one mechanically correct fix, such as a link where exactly one file matches the basename. Show the combined diff, then offer it as an option on the first finding of that class. One box, one confirmation, the whole class.
 
-**Never batch-eligible:**
-
-- `ssot_direction` is `uncertain`
-- a choice exists
-- `source` is a judgement reviewer
-- the fix deletes anything
-
-Deletions are always individual and always confirmed. Eligibility is a property of the finding, not a judgement made in the moment.
+Never batch when `ssot_direction` is `uncertain`, when a choice exists, when the source is a reviewer, or when the fix deletes anything. Deletions are always individual and always confirmed.
 
 ## Write safety
 
 **Non-negotiable. Read before the first edit.**
 
-1. If the target is not a git repository, **refuse to write at all**. There is no undo without git.
-2. Capture `git status --porcelain` before the first write.
-3. Re-check after each applied fix. If anything changed that dovetail did not apply, **stop the run and report it** - something else is writing to the tree, and continuing risks conflicting edits.
+1. If the target is not a git repository, **refuse to write at all**. There is no undo without git. `scan` refuses to start there anyway.
+2. Before each fix, run `check`. It compares a content hash of every file with the snapshot `scan` took, so it also sees a second edit to a file that was already modified.
+3. If `check` exits `1`, or `decide ... fix` prints `STOP` and exits `3`, **stop the run and report it**. Something else is writing to the tree, and continuing risks conflicting edits.
 4. Only ever apply a fix the user approved. Never batch something ineligible. Never fix "while you are in there".
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py check --repo <repo-path>
+```
 
 The scan itself never writes. Only the triage loop does, and only on approval.
 
@@ -297,25 +185,17 @@ The scan itself never writes. Only the triage loop does, and only on approval.
 
 Everything degrades; nothing crashes.
 
-- A reviewer that errors or returns malformed output → named in the header, run continues
-- A `.dovetail/checks/` plugin that raises → named in `failed_checks`, skipped
+- A shard that errors or returns malformed output → named, run continues
+- A `.dovetail/checks/` plugin that raises → named in the summary, skipped
 - git unavailable → co-change and TODO age skipped, everything else runs
-- `--since` against an unresolvable ref → **exit 2, loudly**. A check that reports success because it could not run is worse than no check
-
-## CI
-
-Two workflow templates in `${CLAUDE_SKILL_DIR}/ci/`, for copying into the user's own repository:
-
-- `dovetail-pr.yml` - per pull request, deterministic only, no model, no key. `--since` scopes findings to the diff so a repo with existing debt can adopt it. Safe to fail a build on.
-- `dovetail-scheduled.yml` - weekly, deterministic plus judgement, upserts one tracking issue. **Never fails the build.**
-
-`.dovetail/decisions.jsonl` is committed, so CI honours dismissals for free: a finding marked `intentional` during triage does not come back to block a colleague's PR.
+- `--since` against an unresolvable ref → **exit 2, loudly**
 
 ## Reference
 
 `references/finding-schema.md` - the contract reviewers satisfy
 `references/reviewers/*.md` - one rubric per reviewer
 `references/config.md` - `.dovetail/config.toml`
+`ci/` - workflow templates for the user's own CI: `dovetail-pr.yml` gates pull requests on exact findings, `dovetail-scheduled.yml` runs the reviewers weekly and never fails the build
 
 ## Requirements
 

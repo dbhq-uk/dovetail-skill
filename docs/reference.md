@@ -99,6 +99,51 @@ The contract reviewers write against is
 [`references/finding-schema.md`](../skills/dovetail/references/finding-schema.md), which ships
 inside the skill because both dispatch paths validate against it.
 
+## dovetail.py
+
+The run driver. An interactive run calls these verbs rather than reading the scan's JSON: on a
+repository of about 900 files the JSON and the contradiction clusters come to hundreds of
+kilobytes, which is most of an agent's context before the first question. The driver keeps the
+run on disk and each verb prints a few lines.
+
+```
+dovetail.py <verb> [--repo PATH] ...
+```
+
+| Verb | What it does | Prints |
+|---|---|---|
+| `scan [--since REF] [--ignore GLOB]` | Runs the scan, starts a new run, snapshots every file | A summary of about eight lines |
+| `next [--json]` | The next finding in queue order | The finding as markdown, then its id, box header, options and whether one may be recommended |
+| `decide ID skip` | Defers the finding for this run | One line |
+| `decide ID intentional\|wontfix --reason TEXT [--summary TEXT]` | Appends to `.dovetail/decisions.jsonl` | One line |
+| `decide ID fix --files PATH ...` | Records a fix and the files it changed | One line, or `STOP` and exit `3` if another file changed |
+| `check` | Compares every file with the snapshot | `clean`, or the changed files and exit `1` |
+| `rescan` | Scans again | What the last fix resolved, and anything it introduced |
+| `prepare-review [--profile P] [--reviewer NAME]` | Writes one prompt file per reviewer shard | One line per reviewer |
+| `wave [--size N]` | Hands out the next shards, 4 by default and 5 at most | One line per shard, with its model |
+| `import-review` | Validates the shard results that have landed, and queues them | Counts, and every dropped or failed shard by name |
+
+`ID` is the short id `next` prints, or the full `sha256:` id. Run state lives in
+`~/.dbhq/dovetail/runs/<repo>-<hash>/`, readable by its owner only; `DOVETAIL_HOME` moves the
+root. `scan` starts a new run and discards the old one's shards.
+
+**Write safety.** `scan` stores a content hash of every file git can see, tracked or not.
+`check` compares against it, so it sees a second edit to a file that was already modified,
+which `git status --porcelain` cannot: the line reads ` M file` both times. dovetail's own
+writes, the files named in `decide ... fix --files` and the ledger, are taken into the
+snapshot as they happen.
+
+**Shards.** `prepare-review` splits each reviewer's work the way `ci_dispatch.py` does: 20
+files, or 25 contradiction clusters, per shard. A shard's prompt is the scheduled job's prompt
+for the same batch, plus the path to write the JSON array to. `import-review` validates each
+result with the lenient validator, dedupes on the finding id, drops anything the ledger already
+suppresses, and holds a low-confidence finding from haiku or sonnet for an opus shard in a later
+wave, unless the profile is `cheap`.
+
+Exit codes: `0` done, `1` `check` found a change, `2` the verb could not run (no run started, an
+unknown id, a missing `--reason` or `--files`, a path outside the repository, or anything `scan`
+itself exits `2` on), `3` `decide ... fix` found a change it was not told about.
+
 ## Deterministic checks
 
 Names are the check function names, which is what `[checks]` in the config takes, so a
@@ -242,5 +287,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 488 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 531 tests, no model calls, no network
 ```
