@@ -37,6 +37,7 @@ DEFAULTS: dict = {
     'checks': {},      # check name -> bool, to disable an individual check
     'gate': {},        # heuristic check name -> bool, to let it fail --fail-on
     'reviewers': {},   # reviewer name -> {enabled, model, effort}
+    'plugins': {},     # .dovetail/checks module name -> {gate}
 }
 
 # Checks whose findings are likely problems rather than proven ones. A link
@@ -55,6 +56,7 @@ VALID_PROFILES = frozenset({'default', 'cheap', 'thorough'})
 VALID_MODELS = ('haiku', 'sonnet', 'opus')
 VALID_EFFORTS = ('low', 'medium', 'high')
 REVIEWER_KEYS = ('enabled', 'model', 'effort')
+PLUGIN_KEYS = ('gate',)
 
 
 def known_checks() -> list[str]:
@@ -67,6 +69,13 @@ def known_checks() -> list[str]:
     import graphcheck
     return [check.__name__ for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
                                           + convcheck.ALL_CHECKS + cochange.ALL_CHECKS)]
+
+
+def known_plugins(repo_root: str) -> list[str]:
+    """The name of every repo-local check, as `[plugins.<name>]` takes it."""
+    from plugins import discover_plugins
+    return [os.path.splitext(os.path.basename(path))[0]
+            for path in discover_plugins(repo_root)]
 
 
 def known_reviewers() -> list[str]:
@@ -178,6 +187,24 @@ def load_config(repo_root: str) -> dict:
         config['reviewers'] = {name: dict(settings)
                                for name, settings in reviewers.items()}
 
+    plugins = raw.get('plugins')
+    if plugins is not None:
+        if not isinstance(plugins, dict):
+            raise ConfigError('`[plugins]` must be a table of per-plugin tables')
+        valid_plugins = known_plugins(repo_root)
+        for name, settings in plugins.items():
+            if name not in valid_plugins:
+                raise _unknown('[plugins]', 'plugin in .dovetail/checks/', name,
+                               valid_plugins)
+            if not isinstance(settings, dict):
+                raise ConfigError(f'`[plugins.{name}]` must be a table')
+            for key in settings:
+                if key not in PLUGIN_KEYS:
+                    raise _unknown(f'[plugins.{name}]', 'setting', key, PLUGIN_KEYS)
+            if 'gate' in settings and not isinstance(settings['gate'], bool):
+                raise ConfigError(f'`plugins.{name}.gate` must be true or false')
+        config['plugins'] = {name: dict(settings) for name, settings in plugins.items()}
+
     return config
 
 
@@ -187,5 +214,12 @@ def check_enabled(config: dict, check_name: str) -> bool:
 
 
 def gated_checks(config: dict) -> list[str]:
-    """Heuristic checks the config lets fail `--fail-on`."""
-    return sorted(name for name, on in config.get('gate', {}).items() if on)
+    """Heuristic checks and plugins the config lets fail `--fail-on`.
+
+    A plugin appears as `plugin:<name>`, the value its findings carry in
+    `check`, so one lookup decides for both.
+    """
+    checks = [name for name, on in config.get('gate', {}).items() if on]
+    plugins = [f'plugin:{name}' for name, settings in config.get('plugins', {}).items()
+               if settings.get('gate')]
+    return sorted(checks) + sorted(plugins)

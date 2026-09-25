@@ -27,7 +27,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py <verb> --repo <repo-path>
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py scan --repo <repo-path>
 ```
 
-It takes seconds: about 1.3 seconds of CPU on 1,000 files and about 4 on 3,000, so run it in the foreground. It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, stale decisions, and findings by category. It also snapshots every file, for write safety. `--since REF` and `--ignore GLOB` work as they do for `scan.py`.
+It takes seconds: about 1.3 seconds of CPU on 1,000 files and about 4 on 3,000, so run it in the foreground. It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, stale decisions, and findings by category. It also snapshots every file, for write safety. `--since REF`, `--ignore GLOB` and `--no-plugins` work as they do for `scan.py`. Pass `--no-plugins` when the user does not trust the repository: `.dovetail/checks/*.py` is code from it, and runs on every scan.
 
 If it exits `2`, report the error and stop. The repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
 

@@ -7,7 +7,7 @@ see the [guides](README.md#doing).
 
 ```
 scan.py <repo-path> [--format json|github] [--since REF]
-                    [--fail-on none|low|medium|high] [--ignore GLOB ...]
+                    [--fail-on none|low|medium|high] [--ignore GLOB ...] [--no-plugins]
 ```
 
 Read-only. It never modifies the repository it is scanning, and the only file it writes
@@ -19,6 +19,7 @@ anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUM
 | `--since REF` | off | Only report findings that touch a file changed since `REF`: an evidence file, or the target of a broken link or anchor, deleted and renamed files included |
 | `--fail-on none\|low\|medium\|high` | `none` | Exit non-zero when a proven finding at or above this severity exists. Heuristic findings count only for checks `[gate]` names |
 | `--ignore GLOB` | none | Exclude a glob. Repeatable, and combines with `ignore` in the config |
+| `--no-plugins` | off | Do not run `.dovetail/checks/*.py`, which is code from the scanned repository. The result counts the plugins it skipped in `plugins_skipped` |
 
 Run it directly, or ask for it in a session:
 
@@ -42,9 +43,10 @@ Three rules govern `1`:
 - **Only proven findings gate by default.** A heuristic finding (`tier` is `heuristic`) counts
   only when `[gate]` in the config names its check. See [Deterministic checks](#deterministic-checks)
   for which checks are which.
-- **Judged findings never gate.** Only sources `graph` and `check:*` are counted, so a
-  reviewer's finding cannot fail a build even at `--fail-on low`. Plugin findings
-  (`plugin:*`) are heuristic and are not counted either.
+- **Judged findings never gate.** Only sources `graph`, `check:*` and `plugin:*` are counted,
+  so a reviewer's finding cannot fail a build even at `--fail-on low`.
+- **A plugin's findings gate only when the config opts that plugin in**, with
+  `[plugins.<name>] gate = true`. Without it they are heuristic and only warn.
 - **A failed check does gate**, whenever `--fail-on` is not `none`. An incomplete result must
   not read as a clean one.
 
@@ -76,7 +78,8 @@ finding that does not gate is a warning.
 | `counts` | Kept findings by severity |
 | `failed_checks` | Checks that raised, and plugins that failed, with the reason |
 | `profile` | The model profile in force |
-| `gate` | Heuristic checks the config lets fail `--fail-on` |
+| `gate` | Heuristic checks, and plugins as `plugin:<name>`, that the config lets fail `--fail-on` |
+| `plugins_skipped` | How many `.dovetail/checks/` plugins `--no-plugins` skipped. `0` on a full scan |
 | `file_count` | Files inventoried |
 | `edge_count` | References resolved between them |
 | `timings` | Seconds each step took: `discover`, `graph`, every check that ran, and each plugin as `plugin:<name>`. A slow check shows here rather than as a slow scan |
@@ -146,7 +149,7 @@ dovetail.py <verb> [--repo PATH] ...
 
 | Verb | What it does | Prints |
 |---|---|---|
-| `scan [--since REF] [--ignore GLOB]` | Runs the scan, starts a new run, snapshots every file | A summary of about eight lines |
+| `scan [--since REF] [--ignore GLOB] [--no-plugins]` | Runs the scan, starts a new run, snapshots every file | A summary of about eight lines |
 | `next [--json]` | The next finding in queue order | The finding as markdown, then its id, box header, options, whether one may be recommended, whether the scan computed a fix, and whether it is `batch_eligible` |
 | `next --batch` | The queued `batch_eligible` findings in the next finding's category, 20 at most | Their combined diff, the box, and one `decide` line for all of them |
 | `decide ID... skip` | Defers the findings for this run | One line |
@@ -290,6 +293,9 @@ orphans = true                               # let a heuristic check fail --fail
 enabled = false                              # bool
 model = "opus"                               # haiku | sonnet | opus
 effort = "high"                              # low | medium | high
+
+[plugins.house_rules]
+gate = true                                  # let .dovetail/checks/house_rules.py fail --fail-on
 ```
 
 Full commentary: [`references/config.md`](../skills/dovetail/references/config.md).
@@ -317,7 +323,9 @@ Repo-local checks. A module exposing `check(inventory, graph)` and returning a l
 findings with at least `id`, `source`, `category`, `problem`, `evidence`, `suggestion` and
 `severity`. `from store import make_finding` builds one with the same line-free `id` a built-in
 finding has. `source` is rewritten to `plugin:<module>`. Names beginning with `_` are skipped.
-A plugin that raises is named in `failed_checks` and skipped.
+A plugin that raises is named in `failed_checks` and skipped. Its findings fail `--fail-on`
+only when `[plugins.<module>] gate = true` is in the config. `--no-plugins` skips them all,
+and a `check` function in one is an entry point, never dead code.
 
 See [writing a repo-local check](guides/custom-checks.md).
 
@@ -346,5 +354,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 630 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 643 tests, no model calls, no network
 ```

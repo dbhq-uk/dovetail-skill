@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import posixpath
 import re
 import textwrap
 
@@ -569,6 +570,9 @@ def version_drift(inventory: dict, graph: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _DUNDER = re.compile(r'^__\w+__$')
+# The function dovetail calls in each repo-local check.
+PLUGIN_DIR = '.dovetail/checks'
+PLUGIN_ENTRY = 'check'
 
 
 _WORD = re.compile(r'\w+')
@@ -604,7 +608,9 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
     to fail a build.
 
     Private (`_`-prefixed) and dunder names are skipped, as are `__init__.py`
-    re-exports, `conftest.py`, and anything under a tests directory.
+    re-exports, `conftest.py`, and anything under a tests directory. So is
+    `check` in a `.dovetail/checks/` plugin: dovetail calls it by that name,
+    so it is an entry point, not dead.
     """
     definitions: list[tuple[str, str, int]] = []
     for entry in _python_files(inventory):
@@ -627,6 +633,8 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
                 continue
             name = node.name
             if name.startswith('_') or _DUNDER.match(name):
+                continue
+            if name == PLUGIN_ENTRY and posixpath.dirname(path) == PLUGIN_DIR:
                 continue
             definitions.append((path, name, node.lineno))
 

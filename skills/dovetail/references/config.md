@@ -36,6 +36,12 @@ enabled = false          # this repo has no diagrams
 [reviewers.code-hygiene]
 model = "opus"           # this repo is mostly shell, which needs the judgement
 effort = "high"
+
+# Let a repo-local check in .dovetail/checks/ fail `--fail-on`. Without this its
+# findings are heuristic and only warn. The name is the module's, and one that
+# matches no plugin stops the run.
+[plugins.house_rules]
+gate = true
 ```
 
 ## Deterministic check names
@@ -67,6 +73,10 @@ For `[checks]` and `[gate]`. These are the function names, so a disabled or gate
 For `[reviewers.<name>]`: `xref`, `convention`, `code-hygiene`, `contradiction`, `staleness`, `spec-flow`, `claim-extract`.
 
 Keys are `enabled` (bool), `model` (`haiku` / `sonnet` / `opus`) and `effort` (`low` / `medium` / `high`).
+
+## Plugins
+
+For `[plugins.<name>]`: the name of a module in `.dovetail/checks/`, without `.py`. The only key is `gate` (bool), which lets that plugin's findings fail `--fail-on` at their own severity.
 
 ## Repo-local checks
 

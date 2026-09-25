@@ -129,10 +129,12 @@ class TestExitCode(unittest.TestCase):
         self.assertEqual(exit_code(result([orphan], gate=['orphans']), 'high'), 1)
         self.assertEqual(exit_code(result([orphan], gate=['missing_paths']), 'high'), 0)
 
-    def test_a_plugin_finding_never_fails_the_build(self):
+    def test_a_plugin_finding_fails_the_build_only_when_opted_in(self):
         local = finding(severity='high', source='plugin:house', tier='heuristic',
                         check='plugin:house')
-        self.assertEqual(exit_code(result([local], gate=['plugin:house']), 'high'), 0)
+        self.assertEqual(exit_code(result([local]), 'high'), 0)
+        self.assertEqual(exit_code(result([local], gate=['plugin:other']), 'high'), 0)
+        self.assertEqual(exit_code(result([local], gate=['plugin:house']), 'high'), 1)
 
     def test_a_finding_without_a_tier_does_not_gate(self):
         untiered = finding(severity='high')

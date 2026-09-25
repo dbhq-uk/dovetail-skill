@@ -72,7 +72,7 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 630 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 643 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```
@@ -86,6 +86,10 @@ general check could know:
 - `house_style_dashes.py` - no em or en dashes in this repository's markdown.
   It is a house rule, not a general one, because plenty of repositories use
   those dashes on purpose
+
+`.dovetail/config.toml` opts all three into the gate with `[plugins.<name>]
+gate = true`, and CI scans this repository with `--fail-on low`. So a finding
+from any of them fails the build, like a proven finding would.
 
 The second exists because four documents here once carried four different
 counts - 243, 359, 243 and 243 - against a suite of 394. A bare number in prose

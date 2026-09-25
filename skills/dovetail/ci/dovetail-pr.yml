@@ -14,6 +14,11 @@
 #
 # Every action is pinned to a commit, and so is dovetail itself. Dependabot
 # can move the actions; move dovetail's `ref` below when you choose to.
+#
+# Plugins in .dovetail/checks/ run as part of the scan. They are code from
+# this repository, including code from the pull request's branch, so a pull
+# request can add or change one and have it run here. The job can only read,
+# and holds no secrets. To scan without them, add --no-plugins to the scan.
 name: dovetail
 
 on:

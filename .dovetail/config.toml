@@ -7,3 +7,14 @@
 # Reviewer tiering, profile and per-check toggles are all left at their
 # defaults. See skills/dovetail/references/config.md for what can go here.
 profile = "default"
+
+# This repository's own rules fail its build, like a proven finding. CI runs
+# the dogfood scan with --fail-on low, so any finding from these counts.
+[plugins.documented_test_count]
+gate = true
+
+[plugins.house_style_dashes]
+gate = true
+
+[plugins.roster_matches_skill]
+gate = true
