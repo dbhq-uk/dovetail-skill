@@ -75,12 +75,14 @@ two - one per side. Each is `{file, line, quote}`:
 
 - `file` is repo-relative, exactly as it appears in the inventory
 - `line` is 1-indexed and must be the line the quote is actually on
-- `quote` is the real text from that line, not a paraphrase
+- `quote` is the real text from that line, not a paraphrase, and never empty
 
 Structured evidence is what makes the render honest: the two conflicting lines
 appear side by side and the reader judges for themselves, instead of reading a
 paragraph asserting that they conflict. **A finding whose quote does not appear
-at that line is a fabrication**, and the validator will reject it.
+at that line is a fabrication**, and the validator will reject it. So is one
+whose quote is empty, or whose file does not exist or lies outside the
+repository.
 
 ## Severity and confidence
 

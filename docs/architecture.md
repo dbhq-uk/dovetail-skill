@@ -98,7 +98,14 @@ from a true one, and it happened on the very first live run against a real repos
 
 An unsound finding is dropped and named; the reviewer's other findings survive. The original
 design discarded the whole batch on the theory that a reviewer producing one bad finding could
-not be trusted at all - which silently lost good findings, the worse failure.
+not be trusted at all - which silently lost good findings, the worse failure. Only output that
+is not a JSON array at all fails the whole reviewer, and it is named as failed.
+
+A quote that is not at its line is not always invented. dovetail edits files during its own
+triage loop, so a quote may have moved (kept, line corrected) or been edited away since the
+reviewer read it (dropped as stale, found by reading the committed file). Evidence that cannot
+be checked at all - an empty quote, a missing or unreadable file, a path outside the
+repository - counts as fabricated, never as a pass.
 
 ## Two dispatch paths, one contract
 

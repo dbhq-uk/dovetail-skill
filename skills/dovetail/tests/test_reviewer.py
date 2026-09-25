@@ -15,9 +15,11 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+import subprocess  # noqa: E402
+
 from reviewer import (  # noqa: E402
-    ROSTER, ValidationError, escalation_enabled, needs_escalation,
-    resolve_roster, validate_findings,
+    ROSTER, StaleEvidenceError, ValidationError, escalation_enabled,
+    needs_escalation, resolve_roster, validate_findings,
 )
 
 REFERENCES = os.path.join(os.path.dirname(__file__), '..', 'references')
@@ -145,18 +147,155 @@ class Validation(unittest.TestCase):
                 {'file': 'README.md', 'line': 1, 'quote': 'text that is not there'}])])
         self.assertIn('fabricated', str(ctx.exception))
 
-    def test_line_beyond_end_of_file_is_rejected(self):
+    def test_line_beyond_end_of_file_with_no_such_quote_is_rejected(self):
         with self.assertRaises(ValidationError):
             self.check([finding(evidence=[
-                {'file': 'README.md', 'line': 9999, 'quote': 'hello'}])])
+                {'file': 'README.md', 'line': 9999, 'quote': 'nowhere at all'}])])
+
+    def test_a_quote_that_moved_is_kept_and_the_line_corrected(self):
+        # An edit above the cited line shifts it. The evidence is still sound,
+        # so correct the coordinate rather than throwing the finding away.
+        out = self.check([finding(evidence=[
+            {'file': 'README.md', 'line': 1, 'quote': 'second line'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 2)
+
+    def test_a_real_quote_cited_beyond_the_end_is_corrected(self):
+        out = self.check([finding(evidence=[
+            {'file': 'README.md', 'line': 9999, 'quote': 'hello'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 1)
+
+    def test_a_blank_line_does_not_match_every_quote(self):
+        # `actual in quote` matches trivially when actual is empty, so a
+        # whole-file search must guard it or any quote "moves" to a blank line.
+        with open(os.path.join(self.repo, 'gappy.md'), 'w', encoding='utf-8') as fh:
+            fh.write('first\n\n\nlast\n')
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[
+                {'file': 'gappy.md', 'line': 1, 'quote': 'absent text'}])])
 
     def test_partial_quote_of_a_real_line_is_accepted(self):
         self.assertEqual(len(self.check([finding(evidence=[
             {'file': 'README.md', 'line': 1, 'quote': 'hello'}])])), 1)
 
-    def test_unreadable_file_is_not_treated_as_fabrication(self):
-        self.assertEqual(len(self.check([finding(evidence=[
-            {'file': 'not-here.md', 'line': 1, 'quote': 'x'}])])), 1)
+    def test_a_missing_file_is_treated_as_fabrication(self):
+        # It used to pass: "unreadable here is not proof of fabrication". But a
+        # reviewer could then get any invented quote through by citing a file
+        # that does not exist. Unproven is fabricated.
+        with self.assertRaises(ValidationError) as ctx:
+            self.check([finding(evidence=[
+                {'file': 'no/such/file.md', 'line': 1, 'quote': 'x'}])])
+        self.assertIn('does not exist', str(ctx.exception))
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_an_unreadable_file_is_treated_as_fabrication(self):
+        with open(os.path.join(self.repo, 'blob.bin'), 'wb') as fh:
+            fh.write(b'\xff\xfe\x00binary')
+        with self.assertRaises(ValidationError) as ctx:
+            self.check([finding(evidence=[
+                {'file': 'blob.bin', 'line': 1, 'quote': 'binary'}])])
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_an_invented_quote_cited_at_a_blank_line_is_rejected(self):
+        # The cited line itself is blank, and the empty string is inside every
+        # quote, so `actual in quote` vouched for anything cited there.
+        with open(os.path.join(self.repo, 'gappy.md'), 'w', encoding='utf-8') as fh:
+            fh.write('first\n\nlast\n')
+        with self.assertRaises(ValidationError) as ctx:
+            self.check([finding(evidence=[
+                {'file': 'gappy.md', 'line': 2,
+                 'quote': 'an invented sentence the file never held'}])])
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_an_empty_quote_is_rejected(self):
+        for quote in ('', '   \n  '):
+            with self.subTest(quote=quote):
+                with self.assertRaises(ValidationError) as ctx:
+                    self.check([finding(evidence=[
+                        {'file': 'README.md', 'line': 1, 'quote': quote}])])
+                self.assertIn('no quote', str(ctx.exception))
+
+    def test_evidence_with_no_quote_at_all_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[{'file': 'README.md', 'line': 1}])])
+
+    def test_a_path_outside_the_repository_is_rejected(self):
+        # Even when the quote really is in that outside file: it is not
+        # evidence about this repository.
+        with tempfile.TemporaryDirectory() as outside:
+            target = os.path.join(outside, 'notes.md')
+            with open(target, 'w', encoding='utf-8') as fh:
+                fh.write('hello world\n')
+            relative = os.path.relpath(target, self.repo)
+            for cited in (relative, target):
+                with self.subTest(cited=cited):
+                    with self.assertRaises(ValidationError) as ctx:
+                        self.check([finding(evidence=[
+                            {'file': cited, 'line': 1, 'quote': 'hello world'}])])
+                    self.assertIn('outside the repository', str(ctx.exception))
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_a_symlink_that_leaves_the_repository_is_rejected(self):
+        with tempfile.TemporaryDirectory() as outside:
+            target = os.path.join(outside, 'notes.md')
+            with open(target, 'w', encoding='utf-8') as fh:
+                fh.write('hello world\n')
+            os.symlink(target, os.path.join(self.repo, 'link.md'))
+            with self.assertRaises(ValidationError):
+                self.check([finding(evidence=[
+                    {'file': 'link.md', 'line': 1, 'quote': 'hello world'}])])
+
+    def test_a_short_line_cannot_vouch_for_a_long_quote(self):
+        # `---` is inside any quote that holds three hyphens, so the reverse
+        # match must not accept a line that covers only a sliver of the quote.
+        with open(os.path.join(self.repo, 'doc.md'), 'w', encoding='utf-8') as fh:
+            fh.write('---\ntitle: x\n---\n')
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[
+                {'file': 'doc.md', 'line': 1,
+                 'quote': 'the timeout is 30 seconds --- set in config.toml'}])])
+
+    def test_a_real_line_cannot_vouch_for_words_added_to_it(self):
+        # The line is most of the quote, but the words on the end are invented
+        # and turn the claim around. Punctuation may be added; words may not.
+        with open(os.path.join(self.repo, 'doc.md'), 'w', encoding='utf-8') as fh:
+            fh.write('Deploys run automatically on every merge to the default branch\n')
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[
+                {'file': 'doc.md', 'line': 1,
+                 'quote': 'Deploys run automatically on every merge to the '
+                          'default branch except on Fridays'}])])
+
+    def test_a_quote_with_a_little_extra_at_the_ends_is_still_accepted(self):
+        # What the reverse match is for: a bullet or a closing full stop the
+        # reviewer carried and the line does not have.
+        out = self.check([finding(evidence=[
+            {'file': 'README.md', 'line': 1, 'quote': '- hello world.'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 1)
+
+    def test_a_quote_that_wraps_onto_the_next_line_is_accepted(self):
+        # Hard-wrapped prose: the reviewer quotes the sentence, not the line.
+        with open(os.path.join(self.repo, 'wrap.md'), 'w', encoding='utf-8') as fh:
+            fh.write('intro\nrequests time out after\n30 seconds by default\n')
+        out = self.check([finding(evidence=[
+            {'file': 'wrap.md', 'line': 2,
+             'quote': 'requests time out after 30 seconds'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 2)
+
+    def test_a_wrapped_quote_does_not_cross_a_blank_line(self):
+        with open(os.path.join(self.repo, 'wrap.md'), 'w', encoding='utf-8') as fh:
+            fh.write('requests time out after\n\n30 seconds by default\n')
+        with self.assertRaises(ValidationError):
+            self.check([finding(evidence=[
+                {'file': 'wrap.md', 'line': 1,
+                 'quote': 'requests time out after 30 seconds'}])])
+
+    def test_a_wrapped_quote_cited_at_the_wrong_line_is_corrected(self):
+        with open(os.path.join(self.repo, 'wrap.md'), 'w', encoding='utf-8') as fh:
+            fh.write('intro\nrequests time out after\n30 seconds by default\n')
+        out = self.check([finding(evidence=[
+            {'file': 'wrap.md', 'line': 1,
+             'quote': 'requests time out after 30 seconds'}])])
+        self.assertEqual(out[0]['evidence'][0]['line'], 2)
 
     def test_one_bad_finding_rejects_the_whole_batch(self):
         # A reviewer emitting malformed output is one whose valid-looking
@@ -172,6 +311,109 @@ class Validation(unittest.TestCase):
         self.assertEqual(out['blast_radius'], [])
 
 
+
+
+class EditedUnderTheReviewer(unittest.TestCase):
+    """A file edited mid-run is not a reviewer fabricating evidence.
+
+    Observed live: during a triage run the orchestrator applied a fix the user
+    had approved, and the next reviewer to return had its entire output
+    rejected because one finding quoted the line that fix had rewritten. Ten
+    sound findings were nearly lost because dovetail edited the file itself.
+
+    The committed blob separates the cases exactly - no timestamp heuristics.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = self._tmp.name
+        self._git('init', '-q')
+        self._git('config', 'user.email', 'test@example.com')
+        self._git('config', 'user.name', 'Test')
+        self._write('README.md', 'the secretary is Rob Hawkins\nsecond line\n')
+        self._git('add', '-A')
+        self._git('commit', '-qm', 'initial')
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _git(self, *args):
+        subprocess.run(['git', '-C', self.repo, *args], check=True,
+                       capture_output=True)
+
+    def _write(self, name, body):
+        with open(os.path.join(self.repo, name), 'w', encoding='utf-8') as fh:
+            fh.write(body)
+
+    def _check(self, quote, **kw):
+        return validate_findings(
+            [finding(evidence=[{'file': 'README.md', 'line': 1, 'quote': quote}])],
+            'staleness', self.repo, **kw)
+
+    def test_a_quote_edited_away_is_stale_not_fabricated(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        with self.assertRaises(StaleEvidenceError) as ctx:
+            self._check('the secretary is Rob Hawkins')
+        message = str(ctx.exception)
+        self.assertIn('edited after', message)
+        self.assertNotIn('fabricated evidence', message)
+
+    def test_a_stale_finding_is_dropped_without_losing_the_others(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        rejected = []
+        out = validate_findings(
+            [finding(problem='a', evidence=[
+                {'file': 'README.md', 'line': 2, 'quote': 'second line'}]),
+             finding(problem='b', evidence=[
+                 {'file': 'README.md', 'line': 1,
+                  'quote': 'the secretary is Rob Hawkins'}]),
+             finding(problem='c', evidence=[
+                 {'file': 'README.md', 'line': 1, 'quote': 'Rob Gammage'}])],
+            'contradiction', self.repo, rejected=rejected)
+        self.assertEqual([f['problem'] for f in out], ['a', 'c'])
+        self.assertEqual(len(rejected), 1)
+        self.assertIn('not fabricated', rejected[0])
+
+    def test_a_quote_in_neither_version_is_still_fabrication(self):
+        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        with self.assertRaises(ValidationError) as ctx:
+            self._check('a quote that was never anywhere')
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_stale_is_a_validation_error_so_existing_handlers_still_drop_it(self):
+        self._write('README.md', 'rewritten\n')
+        self.assertTrue(issubclass(StaleEvidenceError, ValidationError))
+
+    def test_an_unchanged_file_still_rejects_a_fabricated_quote(self):
+        with self.assertRaises(ValidationError) as ctx:
+            self._check('invented text')
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_a_file_deleted_mid_run_is_stale_not_fabricated(self):
+        os.remove(os.path.join(self.repo, 'README.md'))
+        with self.assertRaises(StaleEvidenceError):
+            self._check('the secretary is Rob Hawkins')
+
+    def test_a_deleted_file_does_not_vouch_for_an_invented_quote(self):
+        os.remove(os.path.join(self.repo, 'README.md'))
+        with self.assertRaises(ValidationError) as ctx:
+            self._check('a quote that was never anywhere')
+        self.assertIn('fabricated', str(ctx.exception))
+
+    def test_stale_is_detected_when_the_scan_root_is_a_subdirectory(self):
+        # `git show HEAD:<path>` reads from the top of the repository, so a
+        # repo_root below it found no committed file and called every edited
+        # line fabricated.
+        os.makedirs(os.path.join(self.repo, 'docs'))
+        self._write('docs/guide.md', 'the port is 8080\n')
+        self._git('add', '-A')
+        self._git('commit', '-qm', 'guide')
+        self._write('docs/guide.md', 'the port is 9090\n')
+        with self.assertRaises(StaleEvidenceError):
+            validate_findings(
+                [finding(evidence=[
+                    {'file': 'guide.md', 'line': 1, 'quote': 'the port is 8080'}])],
+                'staleness', os.path.join(self.repo, 'docs'))
 
 
 class LenientValidation(Validation):
