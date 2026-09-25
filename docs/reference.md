@@ -330,7 +330,9 @@ See [writing a repo-local check](guides/custom-checks.md).
 
 Both need `fetch-depth: 0`. The scheduled job needs `CLAUDE_CODE_OAUTH_TOKEN` for the
 judgement layer and `issues: write` for the tracking issue; without the token it warns and
-reports deterministic findings only.
+reports deterministic findings only. Both pin every action to a commit SHA and check dovetail
+out at a fixed `ref`, which you move when you want a newer dovetail. On the schedule no
+profile is passed, so the one in `.dovetail/config.toml` applies.
 
 ## Requirements
 
@@ -344,5 +346,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 620 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 630 tests, no model calls, no network
 ```

@@ -396,7 +396,7 @@ class TestReview(Base):
         """(model, prompt) per `claude -p` call the scheduled job would make."""
         sent: list[tuple[str, str]] = []
 
-        def fake_claude(prompt, model, repo_root, timeout=0):
+        def fake_claude(prompt, model, repo_root, timeout=0, effort=None):
             sent.append((model, prompt))
             return '[]'
 

@@ -11,11 +11,18 @@
 # --since scopes findings to files the pull request actually touched, so a
 # repository with pre-existing findings can adopt this without every unrelated
 # pull request going red. Whole-repository debt belongs in a scheduled job.
+#
+# Every action is pinned to a commit, and so is dovetail itself. Dependabot
+# can move the actions; move dovetail's `ref` below when you choose to.
 name: dovetail
 
 on:
   pull_request:
   workflow_dispatch:
+
+# The scan only reads the repository.
+permissions:
+  contents: read
 
 jobs:
   coherence:
@@ -27,21 +34,24 @@ jobs:
     # whole-repository job for on-demand runs.
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # --since resolves the base ref by looking it up in history. On a
           # shallow clone that ref is absent, so scan.py fails loudly (exit 2)
           # rather than silently passing. Full history avoids that failure.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
       - name: Check out dovetail
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: dbhq-uk/dovetail-skill
+          # A fixed commit, so this job runs the dovetail you chose rather
+          # than whatever dovetail's main holds that day. Move it on purpose.
+          ref: f0273d86acd608a1bf20b7a19a469852953f3c28
           path: .dovetail-skill
 
       - name: Scan
