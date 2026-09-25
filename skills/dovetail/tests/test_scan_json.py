@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
@@ -151,6 +152,56 @@ class TestSinceFiltering(ScanCase):
         )
         self.assertEqual(proc.returncode, 2)
         self.assertIn('shallow clone', proc.stderr)
+
+
+
+class TestWithoutGit(ScanCase):
+    """With no `git` on PATH the scan refuses, and says why.
+
+    It cannot degrade to a partial scan: git lists the files and is the undo
+    the triage loop relies on. The failure must name the missing binary, not
+    report a perfectly good checkout as "not a git repository".
+    """
+
+    DRIVER = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'dovetail.py')
+
+    def setUp(self):
+        super().setUp()
+        self.empty_path = tempfile.mkdtemp()  # a PATH with nothing on it
+
+    def tearDown(self):
+        shutil.rmtree(self.empty_path, ignore_errors=True)
+        super().tearDown()
+
+    def run_without_git(self, *argv: str) -> subprocess.CompletedProcess:
+        env = dict(os.environ, PATH=self.empty_path)
+        return subprocess.run([sys.executable, *argv], capture_output=True,
+                              text=True, env=env)
+
+    def assert_names_missing_git(self, proc: subprocess.CompletedProcess) -> None:
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn('git is not installed or not on PATH', proc.stderr)
+        self.assertNotIn('not a git repository', proc.stderr)
+        self.assertEqual(proc.stdout, '')
+
+    def test_run_scan_raises_naming_the_binary(self):
+        with unittest.mock.patch.dict(os.environ, {'PATH': self.empty_path}):
+            with self.assertRaises(ValueError) as caught:
+                run_scan(self.repo)
+        self.assertIn('git is not installed', str(caught.exception))
+
+    def test_scan_cli_exits_two(self):
+        self.assert_names_missing_git(
+            self.run_without_git(SCRIPT, self.repo, '--format', 'json'))
+
+    def test_scan_cli_exits_two_even_without_a_gate(self):
+        # Not "everything else runs": --fail-on none still gets no result.
+        self.assert_names_missing_git(
+            self.run_without_git(SCRIPT, self.repo, '--fail-on', 'none'))
+
+    def test_the_run_driver_exits_two(self):
+        self.assert_names_missing_git(
+            self.run_without_git(self.DRIVER, 'scan', '--repo', self.repo))
 
 
 class TestSinceSeesWhatBrokeTheLink(unittest.TestCase):

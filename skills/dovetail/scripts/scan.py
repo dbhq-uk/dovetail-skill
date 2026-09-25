@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 
@@ -52,6 +53,13 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     root = os.path.abspath(repo_root)
     if not os.path.isdir(root):
         raise ValueError(f'not a directory: {repo_root}')
+    # Checked apart from is_git_repo, which reads a missing binary as "not a
+    # repository" and would send the user looking for the wrong fault. There
+    # is no partial scan without git: it lists the files, and it is the undo
+    # that makes the triage loop safe to write.
+    if shutil.which('git') is None:
+        raise ValueError('git is not installed or not on PATH. dovetail needs it '
+                         'to list the files to scan, so it will not run without it')
     if not is_git_repo(root):
         raise ValueError(f'not a git repository: {repo_root}')
 

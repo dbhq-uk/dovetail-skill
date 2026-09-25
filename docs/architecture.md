@@ -177,8 +177,9 @@ without git.
 | A reviewer errors or returns malformed output | Named in the header, run continues |
 | A `.dovetail/checks/` plugin raises | Named in `failed_checks`, skipped |
 | A built-in check raises | Named in `failed_checks`; exits `1` if `--fail-on` is set |
-| git is unavailable | Co-change and TODO age skipped, everything else runs |
+| git is not installed | **Exit 2**, naming the missing binary |
 | `--since` cannot resolve its ref | **Exit 2, loudly** |
 
-The last row is the exception, and it is the right one. A check that reports success because
-it could not run is worse than no check.
+The last two rows are the exceptions, and they are the right ones. git lists the files to scan
+and is the undo the triage loop relies on, so there is no partial scan without it. A check that
+reports success because it could not run is worse than no check.

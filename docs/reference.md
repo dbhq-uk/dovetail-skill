@@ -33,7 +33,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 |---|---|
 | `0` | No finding met the threshold, and no check failed |
 | `1` | A qualifying finding exists, or a check raised while `--fail-on` was not `none` |
-| `2` | The scan could not run: not a git repository, an invalid `.dovetail/config.toml`, or a `--since` ref that does not resolve |
+| `2` | The scan could not run: `git` is not installed, not a git repository, an invalid `.dovetail/config.toml`, or a `--since` ref that does not resolve |
 
 Exit `2` is deliberately loud. On a shallow clone `--since` cannot resolve its base ref, and a
 check that reports success because it could not run is worse than no check at all.
@@ -354,5 +354,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 645 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 650 tests, no model calls, no network
 ```

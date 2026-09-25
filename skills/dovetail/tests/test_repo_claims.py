@@ -94,6 +94,14 @@ class TestNoFirstVersionClaims(unittest.TestCase):
         self.assertIn('approve', description)
 
 
+
+class TestDegradationClaims(unittest.TestCase):
+    def test_no_document_says_a_scan_runs_without_git(self):
+        # The degradation tables once said a missing git only skipped the
+        # history checks. scan.py exits 2 instead: git lists the files.
+        hits = [rel for rel in published_docs() if 'TODO age skipped' in read(rel)]
+        self.assertEqual(hits, [])
+
 class TestSecurityPage(unittest.TestCase):
     def setUp(self) -> None:
         self.page = read('SECURITY.md')
