@@ -330,7 +330,7 @@ class EditedUnderTheReviewer(unittest.TestCase):
         self._git('init', '-q')
         self._git('config', 'user.email', 'test@example.com')
         self._git('config', 'user.name', 'Test')
-        self._write('README.md', 'the secretary is Rob Hawkins\nsecond line\n')
+        self._write('README.md', 'the maintainer is Alex Smith\nsecond line\n')
         self._git('add', '-A')
         self._git('commit', '-qm', 'initial')
 
@@ -351,31 +351,31 @@ class EditedUnderTheReviewer(unittest.TestCase):
             'staleness', self.repo, **kw)
 
     def test_a_quote_edited_away_is_stale_not_fabricated(self):
-        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        self._write('README.md', 'the maintainer is Sam Jones\nsecond line\n')
         with self.assertRaises(StaleEvidenceError) as ctx:
-            self._check('the secretary is Rob Hawkins')
+            self._check('the maintainer is Alex Smith')
         message = str(ctx.exception)
         self.assertIn('edited after', message)
         self.assertNotIn('fabricated evidence', message)
 
     def test_a_stale_finding_is_dropped_without_losing_the_others(self):
-        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        self._write('README.md', 'the maintainer is Sam Jones\nsecond line\n')
         rejected = []
         out = validate_findings(
             [finding(problem='a', evidence=[
                 {'file': 'README.md', 'line': 2, 'quote': 'second line'}]),
              finding(problem='b', evidence=[
                  {'file': 'README.md', 'line': 1,
-                  'quote': 'the secretary is Rob Hawkins'}]),
+                  'quote': 'the maintainer is Alex Smith'}]),
              finding(problem='c', evidence=[
-                 {'file': 'README.md', 'line': 1, 'quote': 'Rob Gammage'}])],
+                 {'file': 'README.md', 'line': 1, 'quote': 'Sam Jones'}])],
             'contradiction', self.repo, rejected=rejected)
         self.assertEqual([f['problem'] for f in out], ['a', 'c'])
         self.assertEqual(len(rejected), 1)
         self.assertIn('not fabricated', rejected[0])
 
     def test_a_quote_in_neither_version_is_still_fabrication(self):
-        self._write('README.md', 'the secretary is Rob Gammage\nsecond line\n')
+        self._write('README.md', 'the maintainer is Sam Jones\nsecond line\n')
         with self.assertRaises(ValidationError) as ctx:
             self._check('a quote that was never anywhere')
         self.assertIn('fabricated', str(ctx.exception))
@@ -392,7 +392,7 @@ class EditedUnderTheReviewer(unittest.TestCase):
     def test_a_file_deleted_mid_run_is_stale_not_fabricated(self):
         os.remove(os.path.join(self.repo, 'README.md'))
         with self.assertRaises(StaleEvidenceError):
-            self._check('the secretary is Rob Hawkins')
+            self._check('the maintainer is Alex Smith')
 
     def test_a_deleted_file_does_not_vouch_for_an_invented_quote(self):
         os.remove(os.path.join(self.repo, 'README.md'))
