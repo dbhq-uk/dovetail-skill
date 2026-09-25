@@ -96,8 +96,10 @@ jobs:
           PY
 
       # Constraint 2: never write to the scanned repository. store.append_decision
-      # is a helper the scan path deliberately does not call - if it ever gains a
-      # caller there, the tool has started editing people's repositories.
+      # is called from one place: dovetail.py's `decide` verb, which runs only
+      # when the user marks a finding intentional during triage. If it ever gains
+      # a caller on the scan path, the tool has started editing people's
+      # repositories.
       - name: The scan path never writes to the target repository
         run: |
           python3 - <<'PY'
@@ -105,7 +107,7 @@ jobs:
           scripts = pathlib.Path("skills/dovetail/scripts")
           callers = []
           for f in scripts.glob("*.py"):
-              if f.name == "store.py":
+              if f.name in ("store.py", "dovetail.py"):
                   continue
               if re.search(r"\bappend_decision\s*\(", f.read_text()):
                   callers.append(f.name)
