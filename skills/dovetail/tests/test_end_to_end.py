@@ -179,6 +179,45 @@ class TestPlantedDefects(unittest.TestCase):
                 fh.write(body)
 
 
+class TestTypeScriptImports(unittest.TestCase):
+    """Extensionless and directory imports, the normal way to write TS.
+
+    Each was reported as a high broken link, and its target as an orphan, so
+    with `--fail-on high` nearly every pull request in a TypeScript project
+    failed.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = tempfile.mkdtemp()
+        git(cls.repo, 'init', '-q', '-b', 'main')
+        write(cls.repo, 'README.md', '# App\n\nThe entry point is [a](src/a.ts).\n')
+        write(cls.repo, 'src/a.ts',
+              'import { b } from "./b";\nimport { h } from "./lib/helpers";\n')
+        write(cls.repo, 'src/b.ts', 'export const b = 1;\n')
+        write(cls.repo, 'src/lib/helpers/index.ts', 'export const h = 1;\n')
+        git(cls.repo, 'add', '-A')
+        git(cls.repo, 'commit', '-qm', 'init')
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.repo, ignore_errors=True)
+
+    def test_the_scan_passes_a_high_gate(self):
+        scan = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'scan.py')
+        proc = subprocess.run(
+            [sys.executable, scan, '.', '--format', 'github', '--fail-on', 'high'],
+            cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn('broken_link', proc.stdout)
+
+    def test_neither_import_target_is_an_orphan(self):
+        orphans = {e['file'] for f in run_scan(self.repo)['findings']
+                   if f['category'] == 'orphan' for e in f['evidence']}
+        self.assertNotIn('src/b.ts', orphans)
+        self.assertNotIn('src/lib/helpers/index.ts', orphans)
+
+
 class TestStdlibOnly(unittest.TestCase):
     def test_no_third_party_imports(self):
         """Every dovetail module must import stdlib or a sibling module only."""

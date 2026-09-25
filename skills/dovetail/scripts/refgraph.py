@@ -51,6 +51,13 @@ _PATH_LITERAL = re.compile(r'(?<![\w/])((?:\.{1,2}/)?(?:[\w.-]+/)+[\w.-]+\.\w*[A
 # resolves to a.ts when a.js does not exist.
 _JS_TO_TS = {'.js': ['.ts', '.tsx'], '.jsx': ['.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts']}
 
+# What a bundler, TypeScript or Node tries for a specifier written without an
+# extension, in order. `from "./site"` is the normal way to write an import in
+# a TypeScript project, and reporting it as a broken link failed nearly every
+# pull request in one. `.json` is last because Node's require resolves it too.
+_JS_IMPLICIT_EXTS = ('.ts', '.tsx', '.d.ts', '.mts', '.cts',
+                     '.js', '.jsx', '.mjs', '.cjs', '.json')
+
 _EXTERNAL = re.compile(r'^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)')
 
 # Which edge kinds are meaningful in which sources. Running a JS-specifier or
@@ -95,8 +102,14 @@ def _unbracket(target: str) -> str:
 
 
 def _resolve(src: str, target: str, known: set[str], *,
-             allow_root_fallback: bool = False) -> str | None:
-    """Resolve a link target to a repo-relative path, or None."""
+             allow_root_fallback: bool = False,
+             js_specifier: bool = False) -> str | None:
+    """Resolve a link target to a repo-relative path, or None.
+
+    `js_specifier` marks a JS/TS import, which may leave out the extension or
+    name a directory holding an `index` file. Those are only tried after the
+    specifier fails to resolve as written.
+    """
     if target.startswith('/'):
         candidate = target.lstrip('/')
     else:
@@ -110,6 +123,14 @@ def _resolve(src: str, target: str, known: set[str], *,
     for alt_ext in _JS_TO_TS.get(ext, []):
         if stem + alt_ext in known:
             return stem + alt_ext
+
+    if js_specifier:
+        # Appended, not substituted: in `./app.module` the `.module` is part
+        # of the name, and the file is app.module.ts.
+        for base in (candidate, posixpath.join(candidate, 'index')):
+            for implicit in _JS_IMPLICIT_EXTS:
+                if base + implicit in known:
+                    return base + implicit
 
     # Deliberately restricted to path_literal: a bare markdown or HTML target
     # is unambiguously relative to its own file, so when it does not resolve
@@ -293,11 +314,11 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                     # resolving. Fall back to the raw form so a literal '%'
                     # in a filename (not a valid escape) still resolves.
                     decoded = unquote(path_part)
-                    dst = _resolve(path, decoded, known,
-                                    allow_root_fallback=(kind == 'path_literal'))
+                    options = {'allow_root_fallback': kind == 'path_literal',
+                               'js_specifier': kind == 'import'}
+                    dst = _resolve(path, decoded, known, **options)
                     if dst is None and decoded != path_part:
-                        dst = _resolve(path, path_part, known,
-                                        allow_root_fallback=(kind == 'path_literal'))
+                        dst = _resolve(path, path_part, known, **options)
                 edges.append({
                     'src': path, 'line': lineno, 'kind': kind,
                     'raw': raw, 'dst': dst, 'anchor': anchor,
