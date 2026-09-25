@@ -217,5 +217,45 @@ class Pinning(unittest.TestCase):
         self.assertIn('\npermissions:\n  contents: read\n', template('dovetail-pr.yml'))
 
 
+def pinned_refs() -> set[str]:
+    """The dovetail commit each template, and the CI guide, checks out."""
+    texts = [template(name) for name in TEMPLATES]
+    with open(os.path.join(REPO_ROOT, 'docs', 'guides', 'ci.md'), encoding='utf-8') as fh:
+        texts.append(fh.read())
+    return {ref for text in texts
+            for ref in re.findall(r'repository: dbhq-uk/dovetail-skill\s+(?:#.*\n\s*)*ref: ([0-9a-f]{40})',
+                                  text)}
+
+
+def at(ref: str, path: str) -> str | None:
+    """A file at a commit, or None when the commit is not in this clone."""
+    result = subprocess.run(['git', 'show', f'{ref}:{path}'], cwd=REPO_ROOT,
+                            capture_output=True, text=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+class PinnedRef(unittest.TestCase):
+    """The pinned dovetail must have what the templates rely on.
+
+    A template cannot pin the commit that adds it, so the ref moves in a
+    commit of its own. Pinned to a commit from before `--effort`, users kept
+    reviewers running at the CLI's default effort.
+    """
+
+    def test_every_place_pins_the_same_commit(self):
+        self.assertEqual(len(pinned_refs()), 1, pinned_refs())
+
+    def test_the_pinned_commit_passes_effort_and_knows_no_plugins(self):
+        (ref,) = pinned_refs()
+        dispatch = at(ref, 'skills/dovetail/scripts/ci_dispatch.py')
+        if dispatch is None:
+            self.skipTest(f'{ref[:12]} is not in this clone (a shallow checkout)')
+        # assertTrue, not assertIn: a failure should name the ref, not print
+        # a whole file.
+        self.assertTrue("'--effort'" in dispatch, f'{ref[:12]} does not pass --effort')
+        self.assertTrue('--no-plugins' in at(ref, 'skills/dovetail/scripts/scan.py'),
+                        f'{ref[:12]} has no --no-plugins')
+
+
 if __name__ == '__main__':
     unittest.main()

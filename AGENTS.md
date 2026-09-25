@@ -67,12 +67,13 @@ Break any of these and it stops being the thing people can trust:
 - The floor binds the interpreter that *runs*, not `python3` specifically. [`bootstrap.py`](skills/dovetail/scripts/bootstrap.py) re-execs the original command line under the newest suitable interpreter on `PATH`, so a host with 3.10 as `python3` and 3.12 alongside is supported without touching the host. `bootstrap.ensure()` must be called before the first `tomllib` import on any path that reaches it - today that is `scan.py`, `dovetail.py`, `config.py` and `exactcheck.py`.
 - SKILL.md references scripts via `${CLAUDE_SKILL_DIR}`, which Claude Code substitutes for personal, project and plugin installs alike. `install.sh` symlinks the whole skill directory with no rewrite; `install-codex.sh` rewrites the variable, since Codex does not substitute it.
 - Tests are hermetic: no network, and they build throwaway git repositories in temp dirs rather than touching anything real.
+- The CI templates check dovetail out at a pinned commit. A template cannot pin the commit that adds it, so after a change the templates rely on has merged, move `ref` in both templates and in `docs/guides/ci.md` in a commit of its own. `test_ci_templates.py` checks that all three agree and, where the history is present, that the pinned commit has what the templates use.
 - House style: British English, plain hyphens (no em or en dashes).
 
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 643 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 645 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```
