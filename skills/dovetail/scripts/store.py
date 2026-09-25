@@ -48,8 +48,9 @@ def make_finding(
     severity: str,
     blast_radius: list[str] | None = None,
     claim: str | None = None,
+    fix: dict | None = None,
 ) -> dict:
-    """Build a Finding with Phase 1 defaults applied."""
+    """Build a Finding. The scan fills `blast_radius` and `batch_eligible` afterwards."""
     files = [e['file'] for e in evidence]
     return {
         'id': fingerprint(category, files, claim if claim is not None else problem),
@@ -58,8 +59,9 @@ def make_finding(
         'problem': problem,
         'evidence': evidence,
         'suggestion': suggestion,
-        'fix': {'kind': 'none'},
+        'fix': fix or {'kind': 'none'},
         'blast_radius': blast_radius or [],
+        'batch_eligible': False,
         'severity': severity,
         'confidence': 'high',
         'ssot_direction': 'n/a',

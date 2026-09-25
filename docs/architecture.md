@@ -49,7 +49,15 @@ link, an anchor and an import are three things one pattern cannot express.
 
 **The checks** run in a fixed order, each taking `(inventory, graph)`. A check that raises is
 caught and named in `failed_checks` rather than taking down the run. Repo-local plugins run
-last, so they can rely on everything above having completed.
+last, so they can rely on everything above having completed. Each finding is stamped with the
+check that made it and its tier, proven or heuristic.
+
+**Triage facts** come next, from `fixes`. A broken link, a dangling anchor or a documented flag
+with exactly one candidate target gets a `fix`: a unified diff against the file as it is on
+disk. Every finding gets a `blast_radius`, the other files that cite a file in its evidence,
+from the graph's inbound edges, and `batch_eligible` when its fix is mechanical and deletes
+nothing. The triage loop orders and batches by these fields, so two runs on one repository
+triage the same way.
 
 **Suppression** drops findings whose fingerprint appears in the committed decisions ledger,
 and reports the count. Then findings are sorted by severity, category, and first evidence

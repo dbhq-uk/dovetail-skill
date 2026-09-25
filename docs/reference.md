@@ -87,8 +87,9 @@ finding that does not gate is a warning.
   "problem": "One sentence stating what is wrong.",
   "evidence": [{"file": "README.md", "line": 40, "quote": "the real text on that line"}],
   "suggestion": "What to do about it.",
-  "fix": {"kind": "none"},
-  "blast_radius": [],
+  "fix": {"kind": "none"},         // or {"kind": "edit", "files": [...], "diff": "..."}
+  "blast_radius": [],               // other files that cite a file in the evidence
+  "batch_eligible": false,          // may be fixed with the rest of its class
   "severity": "high",               // high | medium | low
   "confidence": "high",             // high | medium | low
   "ssot_direction": "n/a",          // a | b | uncertain | n/a
@@ -102,6 +103,19 @@ structure alone: the link resolves to nothing on every reader's screen. A **heur
 is a likely problem that intent can explain: a file nothing links to may be an entry point. Only
 proven findings fail `--fail-on`, unless `[gate]` opts a heuristic check in. Judged findings
 carry no `check` or `tier`: they come from reviewers and never gate.
+
+`fix`, `blast_radius` and `batch_eligible` are computed by the scan, so every run on one
+repository triages the same way:
+
+- **`fix`** is an `edit` - a unified diff against the file as it is on disk - only when there is
+  exactly one candidate: a broken link where exactly one file in the repository has the target's
+  name, a dangling anchor where exactly one anchor in the target is a close match, a documented
+  flag where exactly one declared flag is. Two candidates is a choice, and gets `none`. An import
+  specifier is never relinked, and links to absolute local paths get `none`.
+- **`blast_radius`** is every other file that cites a file in the finding's evidence, from the
+  reference graph. The triage queue is ordered by its size first.
+- **`batch_eligible`** is true for an exact finding with an `edit` fix, so it can be applied
+  with the rest of its category in one confirmation. A reviewer's finding is never eligible.
 
 `severity` is how much it matters if the finding is real; `confidence` is how sure we are that
 it is. They are different axes and both are needed.
@@ -129,17 +143,18 @@ dovetail.py <verb> [--repo PATH] ...
 | Verb | What it does | Prints |
 |---|---|---|
 | `scan [--since REF] [--ignore GLOB]` | Runs the scan, starts a new run, snapshots every file | A summary of about eight lines |
-| `next [--json]` | The next finding in queue order | The finding as markdown, then its id, box header, options and whether one may be recommended |
-| `decide ID skip` | Defers the finding for this run | One line |
-| `decide ID intentional\|wontfix --reason TEXT [--summary TEXT]` | Appends to `.dovetail/decisions.jsonl` | One line |
-| `decide ID fix --files PATH ...` | Records a fix and the files it changed | One line, or `STOP` and exit `3` if another file changed |
+| `next [--json]` | The next finding in queue order | The finding as markdown, then its id, box header, options, whether one may be recommended, whether the scan computed a fix, and whether it is `batch_eligible` |
+| `next --batch` | The queued `batch_eligible` findings in the next finding's category, 20 at most | Their combined diff, the box, and one `decide` line for all of them |
+| `decide ID... skip` | Defers the findings for this run | One line |
+| `decide ID... intentional\|wontfix --reason TEXT [--summary TEXT]` | Appends to `.dovetail/decisions.jsonl` | One line |
+| `decide ID... fix --files PATH ...` | Records a fix and the files it changed | One line, or `STOP` and exit `3` if another file changed |
 | `check` | Compares every file with the snapshot | `clean`, or the changed files and exit `1` |
 | `rescan` | Scans again | What the last fix resolved, and anything it introduced |
 | `prepare-review [--profile P] [--reviewer NAME]` | Writes one prompt file per reviewer shard | One line per reviewer |
 | `wave [--size N]` | Hands out the next shards, 4 by default and 5 at most | One line per shard, with its model |
 | `import-review` | Validates the shard results that have landed, and queues them | Counts, and every dropped, retried or failed shard by name |
 
-`ID` is the short id `next` prints, or the full `sha256:` id. Run state lives in
+`ID` is the short id `next` prints, or the full `sha256:` id. `decide` takes several, for a batch. Run state lives in
 `~/.dbhq/dovetail/runs/<repo>-<hash>/`, readable by its owner only; `DOVETAIL_HOME` moves the
 root. `scan` starts a new run and discards the old one's shards.
 
@@ -319,5 +334,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 568 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 586 tests, no model calls, no network
 ```

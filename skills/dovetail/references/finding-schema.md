@@ -26,7 +26,7 @@ around it. An empty array is a valid and common answer.
 }
 ```
 
-`id`, `fix` and `blast_radius` are added by dovetail after you return. Do not
+`id`, `fix`, `blast_radius` and `batch_eligible` are added by dovetail after you return. Do not
 invent them.
 
 ## Categories

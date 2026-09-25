@@ -29,6 +29,7 @@ bootstrap.ensure()
 import cochange  # noqa: E402
 import convcheck
 import exactcheck
+import fixes
 import graphcheck
 import plugins as plugin_runner
 from config import HEURISTIC_CHECKS, ConfigError, check_enabled, gated_checks, load_config
@@ -86,6 +87,13 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
                 finding['check'] = f'plugin:{result.name}'
                 finding['tier'] = 'heuristic'
             findings.extend(result.findings)
+
+    # Facts SKILL.md orders and batches by. Computed here so every run on one
+    # repository triages the same way, rather than the agent judging them.
+    for finding in findings:
+        if not finding.get('blast_radius'):
+            finding['blast_radius'] = fixes.blast_radius(finding, graph['inbound'])
+        finding['batch_eligible'] = fixes.batch_eligible(finding)
 
     if since:
         if not is_git_repo(root) or not rev_exists(root, since):

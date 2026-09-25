@@ -63,6 +63,7 @@ def _validate(name: str, findings: object) -> list[dict]:
             raise ValueError(f'finding {index} has severity {finding["severity"]!r}')
         finding.setdefault('fix', {'kind': 'none'})
         finding.setdefault('blast_radius', [])
+        finding.setdefault('batch_eligible', False)
         finding.setdefault('confidence', 'high')
         finding.setdefault('ssot_direction', 'n/a')
         out.append(finding)

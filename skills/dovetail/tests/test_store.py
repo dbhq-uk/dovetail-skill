@@ -70,7 +70,8 @@ class TestMakeFinding(unittest.TestCase):
         )
         self.assertEqual(set(f), {
             'id', 'source', 'category', 'problem', 'evidence', 'suggestion',
-            'fix', 'blast_radius', 'severity', 'confidence', 'ssot_direction',
+            'fix', 'blast_radius', 'batch_eligible', 'severity', 'confidence',
+            'ssot_direction',
         })
 
     def test_phase_one_defaults(self):

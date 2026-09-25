@@ -65,7 +65,7 @@ the run:
 - `evidence` must be a non-empty list of `{file, line}` (add `quote` - the render is much
   better with it)
 - `severity` is `high`, `medium` or `low`
-- `fix`, `blast_radius`, `confidence` and `ssot_direction` are filled in for you if absent
+- `fix`, `blast_radius`, `confidence` and `ssot_direction` are filled in for you if absent. `batch_eligible` is always false for a plugin's finding, so its fixes are applied one at a time
 - `source` is overwritten with `plugin:<module-name>` regardless of what you set, so findings
   are always attributable to the file that produced them
 

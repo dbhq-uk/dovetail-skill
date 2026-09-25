@@ -17,6 +17,7 @@ import re
 from datetime import datetime
 from urllib.parse import unquote
 
+import fixes
 from dynref import dynamically_referenced
 from store import make_finding
 
@@ -111,6 +112,7 @@ def broken_links(inventory: dict, graph: dict) -> list[dict]:
             suggestion=f'Update or remove the link to {raw}.',
             severity='high',
             claim=f'{src} -> {raw}',
+            fix=_relink(inventory, src, raw, edges),
         ))
     for src, edges in sorted(local.items()):
         edges = sorted(edges, key=lambda e: (e['line'], e['raw']))
@@ -134,6 +136,23 @@ def broken_links(inventory: dict, graph: dict) -> list[dict]:
             claim=f'{src} -> absolute local paths',
         ))
     return findings
+
+
+# Link kinds whose target is a plain path, so it can be rewritten as one. An
+# import specifier is not: it may leave out the extension or name a folder.
+_RELINKABLE = frozenset({'md_link', 'md_image', 'md_refdef', 'html'})
+
+
+def _relink(inventory: dict, src: str, raw: str, edges: list[dict]) -> dict:
+    """The fix for a broken link: point it at the one file with the same name."""
+    if any(e['kind'] not in _RELINKABLE for e in edges):
+        return fixes.no_fix()
+    moved = fixes.moved_target(src, raw, inventory.get('all_paths')
+                               or [f['path'] for f in inventory['files']])
+    if moved is None or any(char.isspace() for char in moved):
+        return fixes.no_fix()
+    return fixes.edit_fix(inventory['repo_root'], src,
+                          {e['line']: (raw, moved) for e in edges})
 
 
 # GitHub line anchors, `#L10`, `#L10-L20` and the column form `#L10C2-L12C5`.
@@ -180,6 +199,11 @@ def dangling_anchors(inventory: dict, graph: dict) -> list[dict]:
             {'file': src, 'line': e['line'], 'quote': f'anchor: #{anchor}'}
             for e in sorted(edges, key=lambda e: e['line'])
         ]
+        fix = fixes.no_fix()
+        meant = fixes.one_close_match(unquote(anchor).lower(), available)
+        if meant is not None:
+            fix = fixes.edit_fix(inventory['repo_root'], src, {
+                e['line']: (e['raw'], e['raw'][:-len(anchor)] + meant) for e in edges})
         findings.append(make_finding(
             source='graph',
             category='dangling_anchor',
@@ -188,6 +212,7 @@ def dangling_anchors(inventory: dict, graph: dict) -> list[dict]:
             suggestion=f'Anchors available in {dst}: {shown}',
             severity='medium',
             claim=f'{src} -> {dst}#{anchor}',
+            fix=fix,
         ))
     return findings
 
