@@ -19,7 +19,7 @@ The whole skill directory is symlinked, so edits - including to `SKILL.md` - are
 
 ## Before opening a PR
 
-- `python3 -m pytest skills/dovetail/tests/ -v` - all 586 tests pass, no network needed
+- `python3 -m pytest skills/dovetail/tests/ -v` - all 600 tests pass, no network needed
 - `python3 skills/dovetail/scripts/scan.py . --fail-on high` - this repo has no high findings, which is what CI fails on. Low findings from its own history, such as the one in the README, are expected
 - `claude plugin validate .` - the plugin validates
 

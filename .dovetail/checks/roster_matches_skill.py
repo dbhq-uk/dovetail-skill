@@ -14,6 +14,8 @@ import ast
 import os
 import re
 
+from store import make_finding
+
 SKILL = 'skills/dovetail/SKILL.md'
 ROSTER_SOURCE = 'skills/dovetail/scripts/reviewer.py'
 
@@ -66,33 +68,33 @@ def check(inventory, graph):
         if name == 'claim-extract':
             continue
         if name not in documented:
-            findings.append({
-                'id': f'local:roster:{name}:missing',
-                'source': 'plugin:roster_matches_skill',
-                'category': 'convention',
-                'problem': f'reviewer.py declares `{name}` but SKILL.md\'s '
-                           'dispatch table does not list it.',
-                'evidence': [
+            findings.append(make_finding(
+                source='plugin:roster_matches_skill',
+                category='convention',
+                problem=f'reviewer.py declares `{name}` but SKILL.md\'s '
+                        'dispatch table does not list it.',
+                evidence=[
                     {'file': ROSTER_SOURCE, 'line': 1, 'quote': f'{name}: {model}/{effort}'},
                     {'file': SKILL, 'line': 1, 'quote': 'dispatch table'},
                 ],
-                'suggestion': f'Add `{name}` ({model}, {effort}) to the table in {SKILL}.',
-                'severity': 'medium',
-            })
+                suggestion=f'Add `{name}` ({model}, {effort}) to the table in {SKILL}.',
+                severity='medium',
+                claim=f'{name}|missing',
+            ))
             continue
         if documented[name] != (model, effort):
             got_model, got_effort = documented[name]
-            findings.append({
-                'id': f'local:roster:{name}:drift',
-                'source': 'plugin:roster_matches_skill',
-                'category': 'convention',
-                'problem': (f'SKILL.md documents `{name}` as {got_model}/{got_effort}, '
-                            f'but reviewer.py declares {model}/{effort}.'),
-                'evidence': [
+            findings.append(make_finding(
+                source='plugin:roster_matches_skill',
+                category='convention',
+                problem=(f'SKILL.md documents `{name}` as {got_model}/{got_effort}, '
+                         f'but reviewer.py declares {model}/{effort}.'),
+                evidence=[
                     {'file': SKILL, 'line': 1, 'quote': f'{name}: {got_model}/{got_effort}'},
                     {'file': ROSTER_SOURCE, 'line': 1, 'quote': f'{name}: {model}/{effort}'},
                 ],
-                'suggestion': 'Align the documented tier with the declared one.',
-                'severity': 'medium',
-            })
+                suggestion='Align the documented tier with the declared one.',
+                severity='medium',
+                claim=f'{name}|drift|{got_model}/{got_effort}|{model}/{effort}',
+            ))
     return findings

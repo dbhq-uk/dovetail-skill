@@ -89,6 +89,17 @@ class TestDiscover(unittest.TestCase):
         self.assertNotIn('docs/en/plans/old.md', [f['path'] for f in inv['files']])
         self.assertIn('docs/en/plans/old.md', inv['all_paths'])
 
+    def test_the_decisions_ledger_is_not_scanned_but_still_exists(self):
+        # Its summaries name the files they are about. Read as text, they
+        # un-orphaned the very file a decision was recorded for.
+        write(self.repo, '.dovetail/decisions.jsonl',
+              '{"id": "sha256:x", "summary": "docs/en/plans/old.md is an orphan"}\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'ledger')
+        inv = discover(self.repo)
+        self.assertNotIn('.dovetail/decisions.jsonl', [f['path'] for f in inv['files']])
+        self.assertIn('.dovetail/decisions.jsonl', inv['all_paths'])
+
     def test_files_are_sorted_by_path(self):
         inv = discover(self.repo)
         paths = [f['path'] for f in inv['files']]

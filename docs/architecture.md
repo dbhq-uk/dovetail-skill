@@ -60,7 +60,11 @@ nothing. The triage loop orders and batches by these fields, so two runs on one 
 triage the same way.
 
 **Suppression** drops findings whose fingerprint appears in the committed decisions ledger,
-and reports the count. Then findings are sorted by severity, category, and first evidence
+and reports the count. A ledger row that matches no finding the checks produced is listed in
+`stale_decisions`, before `--since` narrows anything, so a moved file shows up as a stale row
+rather than as a decision that silently stopped working. The ledger itself is left out of the
+inventory's `files`: each row's summary names a file, and read as text it counted as a
+reference to it. Then findings are sorted by severity, category, and first evidence
 file, and printed as JSON or as GitHub annotations.
 
 `--since` filters between the checks and suppression: a finding survives only if some evidence
@@ -89,7 +93,7 @@ expect them to.
 normalised claim - through `json.dumps` rather than string concatenation, so a filename
 containing a delimiter cannot collapse two different findings onto one key. Line numbers are
 excluded on purpose: a finding must keep its identity when unrelated edits move it down the
-file.
+file. File paths are not, so a move changes the id; that is what `stale_decisions` reports.
 
 ## Layer 2, and why it is shaped this way
 

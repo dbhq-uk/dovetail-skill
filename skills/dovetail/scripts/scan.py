@@ -36,7 +36,7 @@ from config import HEURISTIC_CHECKS, ConfigError, check_enabled, gated_checks, l
 from discover import discover
 from gitmeta import changed_since, is_git_repo, rev_exists
 from refgraph import build_graph, written_target
-from store import load_decisions
+from store import load_decisions, stale_decisions
 
 SEVERITY_RANK = {'high': 0, 'medium': 1, 'low': 2}
 
@@ -95,6 +95,10 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             finding['blast_radius'] = fixes.blast_radius(finding, graph['inbound'])
         finding['batch_eligible'] = fixes.batch_eligible(finding)
 
+    # Before --since narrows the list: a decision about a file this change
+    # did not touch is still live, and must not be reported stale.
+    live_ids = {finding['id'] for finding in findings}
+
     if since:
         if not is_git_repo(root) or not rev_exists(root, since):
             raise ValueError(
@@ -110,6 +114,10 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     decisions = load_decisions(root)
     kept = [f for f in findings if f['id'] not in decisions]
     suppressed = len(findings) - len(kept)
+    # A moved file changes every id that names it, so its decisions stop
+    # matching. Listing them is what turns a silent reappearance into a row
+    # the user can re-record.
+    stale = stale_decisions(decisions, live_ids)
 
     kept.sort(key=lambda f: (SEVERITY_RANK[f['severity']],
                              f['category'],
@@ -120,6 +128,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
         counts[finding['severity']] += 1
 
     return {'findings': kept, 'suppressed': suppressed,
+            'stale_decisions': stale,
             'counts': counts, 'failed_checks': failed_checks,
             'profile': config['profile'], 'gate': gated_checks(config),
             'file_count': len(inventory['files']),
@@ -266,6 +275,11 @@ def _summary_markdown(result: dict) -> str:
         f" · {result['suppressed']} suppressed by prior decisions",
         '',
     ]
+    stale = result.get('stale_decisions') or []
+    if stale:
+        lines += [f'{len(stale)} decision(s) in `.dovetail/decisions.jsonl` match no '
+                  'current finding. A moved or renamed file changes the id, so '
+                  're-record any that still apply.', '']
     if result['findings']:
         lines += ['| Severity | Tier | Category | File | Problem |',
                   '|---|---|---|---|---|']

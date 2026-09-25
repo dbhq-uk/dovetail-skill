@@ -10,7 +10,7 @@ Decisions live in `.dovetail/decisions.jsonl` in the repository being scanned, o
 per line:
 
 ```jsonl
-{"at":"2026-07-30","id":"sha256:190e815b…","reason":"Vendored copy, kept in sync deliberately","summary":"vendor/parser.js duplicates src/parser.js","verdict":"intentional"}
+{"at":"2026-07-30","id":"sha256:190e815b…","layer":"exact","reason":"Vendored copy, kept in sync deliberately","summary":"vendor/parser.js duplicates src/parser.js","verdict":"intentional"}
 ```
 
 | Field | Purpose |
@@ -20,6 +20,7 @@ per line:
 | `reason` | Why. For the next person, including future you |
 | `at` | `YYYY-MM-DD` |
 | `summary` | Human-readable echo of what the finding was |
+| `layer` | `exact` or `judged`. Triage writes it. The scan never reports a `judged` row stale, because it cannot re-derive a reviewer's finding. A row without it is checked like an `exact` one |
 
 **Commit it.** That is the whole point: a judgement made once applies to your colleagues and
 to CI, so a finding you have accepted never comes back to block someone else's pull request.
@@ -50,12 +51,26 @@ one with gaps.
 The `id` is a SHA-256 over the finding's category, its files, and a normalised form of the
 claim. Line numbers are deliberately excluded.
 
-That gives you the behaviour you want in both directions:
+That gives you three behaviours:
 
-- **The file moves, or unrelated edits push the finding down the page** - same fingerprint, so
-  the decision keeps suppressing it.
+- **Unrelated edits push the finding down the page** - same fingerprint, so the decision
+  keeps suppressing it.
 - **The finding materially changes** - different fingerprint, so it surfaces again. If what
   you approved has become something else, you should be asked about it.
+- **The file moves or is renamed** - different fingerprint, because the path is part of it.
+  The finding comes back, and the old decision matches nothing.
+
+A decision that matches nothing is not dropped in silence. The scan lists it under
+`stale_decisions` in its JSON, and the run header counts it:
+
+```
+stale       1 decision(s) match no current finding; a moved file changes the id, so re-record any that still apply
+            sha256:190e815b  vendor/parser.js duplicates src/parser.js
+```
+
+After a move, mark the finding intentional again at its new path, then delete the stale row.
+A row can also go stale because the finding was fixed, or because a check was switched off.
+Either way it no longer suppresses anything, and removing it keeps the ledger readable.
 
 You cannot suppress a category wholesale from the ledger, by design. Turning off a whole check
 is a configuration decision, not a per-finding one - see [configuring a
@@ -70,7 +85,8 @@ Every run reports how many findings the ledger suppressed:
 ```
 
 A tool that silently drops findings teaches you to trust a number that is not the whole
-number. If that count starts climbing, the ledger is worth re-reading.
+number. If that count starts climbing, the ledger is worth re-reading. The same goes the other
+way: a decision that has stopped matching is counted as stale, never quietly ignored.
 
 ## When not to use it
 

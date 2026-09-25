@@ -231,6 +231,27 @@ class TestDecide(Base):
         self.ok('decide', self.next_id(), 'wontfix', '--reason', 'kept on purpose')
         self.assertIn('suppressed  1 by prior decisions', self.ok('scan'))
 
+    def test_a_decision_records_its_layer(self):
+        # The scan re-derives exact findings, never a reviewer's, so it needs
+        # to know which rows it can report stale.
+        self.ok('scan')
+        self.ok('decide', self.next_id(), 'wontfix', '--reason', 'kept on purpose')
+        (row,) = self.ledger_rows()
+        self.assertEqual(row['layer'], 'exact')
+
+    def test_the_summary_names_a_decision_that_matches_nothing(self):
+        self.ok('scan')
+        moved = json.loads(self.ok('next', '--json'))['evidence'][0]['file']
+        self.ok('decide', self.next_id(), 'wontfix', '--reason', 'kept on purpose')
+        self.assertNotIn('stale', self.ok('scan'))
+        # Moving the file changes the finding's id.
+        os.makedirs(os.path.join(self.repo, 'moved'))
+        git(self.repo, 'mv', moved, 'moved/' + os.path.basename(moved))
+        git(self.repo, 'commit', '-qm', 'move')
+        out = self.ok('scan')
+        self.assertIn('stale       1 decision(s) match no current finding', out)
+        self.assertIn('broken', out.split('stale', 1)[1])  # the row's summary
+
     def test_an_unknown_id_exits_2(self):
         self.ok('scan')
         result = self.run_driver('decide', 'ffffffffffff', 'skip')

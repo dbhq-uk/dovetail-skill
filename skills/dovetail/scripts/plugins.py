@@ -15,15 +15,21 @@ Plugins are *repo-local code being executed*, which is worth being explicit
 about: dovetail is already running as your user against your checkout, and a
 plugin is no more privileged than the scan itself. What it must never do is
 take down a run, so a plugin that raises is caught, named and skipped.
+
+A plugin can `from store import make_finding` to build its findings. That
+gives its ids the same fingerprint as a built-in finding: category, files and
+claim, never a line number, so a decision about it survives an edit above it.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import traceback
 
 CHECKS_REL = os.path.join('.dovetail', 'checks')
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 REQUIRED_KEYS = {'id', 'source', 'category', 'problem', 'evidence',
                  'suggestion', 'severity'}
@@ -85,6 +91,10 @@ def discover_plugins(repo_root: str) -> list[str]:
 def run_plugins(repo_root: str, inventory: dict, graph: dict) -> list[PluginResult]:
     """Run every repo-local check, isolating failures to the plugin that caused them."""
     results: list[PluginResult] = []
+    # So `from store import make_finding` works in a plugin however the scan
+    # was started. Run as a script, this directory is already first.
+    if SCRIPTS_DIR not in sys.path:
+        sys.path.append(SCRIPTS_DIR)
     for path in discover_plugins(repo_root):
         name = os.path.splitext(os.path.basename(path))[0]
         try:

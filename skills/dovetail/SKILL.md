@@ -27,7 +27,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py <verb> --repo <repo-path>
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py scan --repo <repo-path>
 ```
 
-It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, and findings by category. It also snapshots every file, for write safety. `--since REF` and `--ignore GLOB` work as they do for `scan.py`.
+It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, stale decisions, and findings by category. It also snapshots every file, for write safety. `--since REF` and `--ignore GLOB` work as they do for `scan.py`.
 
 If it exits `2`, report the error and stop. The repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
 
@@ -82,7 +82,7 @@ dovetail · <repo> · <file_count> files, <edge_count> references
 Starting with the 9 exact findings. More will join as reviewers land.
 ```
 
-Always show the exact/judgement split and the suppressed count. Nothing is ever hidden silently. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
+Always show the exact/judgement split and the suppressed count. Nothing is ever hidden silently. If the summary has a `stale` line, show it too: those decisions match no current finding, usually because a file moved, and the user may want to re-record them. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
 
 ## Triage
 

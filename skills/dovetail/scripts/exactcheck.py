@@ -259,6 +259,7 @@ def unparseable_code_blocks(inventory: dict, graph: dict) -> list[dict]:
         text = _read(repo_root, entry['path'])
         if text is None:
             continue
+        seen: dict[tuple[str, str], int] = {}
         for lang, body, start_line in code_blocks(text):
             parser = _PARSERS.get(lang)
             if parser is None or not body.strip():
@@ -268,6 +269,10 @@ def unparseable_code_blocks(inventory: dict, graph: dict) -> list[dict]:
             error = parser(body)
             if error is None:
                 continue
+            # The id names the block by its content and which copy of it this
+            # is, never by its line: an edit above the block must not re-open
+            # a decision about it.
+            occurrence = seen[(lang, body)] = seen.get((lang, body), 0) + 1
             findings.append(make_finding(
                 source='check:codeblock',
                 category='parse_error',
@@ -277,7 +282,7 @@ def unparseable_code_blocks(inventory: dict, graph: dict) -> list[dict]:
                            'quote': body.strip().split('\n')[0][:200]}],
                 suggestion='Fix the snippet, or retag the block if it is pseudo-code.',
                 severity='medium',
-                claim=f'{entry["path"]}|{lang}|{start_line}',
+                claim=f'{lang}|{occurrence}|{body.strip()}',
             ))
     return findings
 
