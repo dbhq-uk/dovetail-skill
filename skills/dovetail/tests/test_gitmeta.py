@@ -110,6 +110,13 @@ class TestLastCommitTimes(GitRepoCase):
         times = last_commit_times(self.repo, ['a.md', 'missing.md'])
         self.assertEqual(set(times), {'a.md', 'missing.md'})
 
+    def test_paths_relative_to_a_subdirectory_root_get_times(self):
+        write(self.repo, 'docs/a.md', 'a')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'one')
+        times = last_commit_times(os.path.join(self.repo, 'docs'), ['a.md'])
+        self.assertIsNotNone(times['a.md'])
+
     def test_empty_paths_returns_empty_dict(self):
         self.assertEqual(last_commit_times(self.repo, []), {})
 
@@ -152,6 +159,34 @@ class TestChangedSince(GitRepoCase):
 
     def test_unknown_ref_returns_empty_set(self):
         self.assertEqual(changed_since(self.repo, 'no-such-ref'), set())
+
+    def _base(self):
+        write(self.repo, 'docs/a.md', 'a')
+        write(self.repo, 'docs/b.md', 'b\n' * 20)
+        write(self.repo, 'top.md', 't')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'base')
+        return git(self.repo, 'rev-parse', 'HEAD').strip()
+
+    def test_a_deleted_file_is_changed(self):
+        base = self._base()
+        git(self.repo, 'rm', '-q', 'docs/a.md')
+        git(self.repo, 'commit', '-qm', 'delete')
+        self.assertEqual(changed_since(self.repo, base), {'docs/a.md'})
+
+    def test_a_rename_names_both_paths(self):
+        base = self._base()
+        git(self.repo, 'mv', 'docs/b.md', 'docs/c.md')
+        git(self.repo, 'commit', '-qm', 'rename')
+        self.assertEqual(changed_since(self.repo, base), {'docs/b.md', 'docs/c.md'})
+
+    def test_paths_are_relative_to_a_subdirectory_root(self):
+        base = self._base()
+        write(self.repo, 'docs/a.md', 'changed')
+        write(self.repo, 'top.md', 'changed')
+        git(self.repo, 'commit', '-qam', 'edit')
+        self.assertEqual(changed_since(os.path.join(self.repo, 'docs'), base),
+                         {'a.md'})
 
     def test_missing_directory_returns_empty_not_raises(self):
         with tempfile.TemporaryDirectory() as parent:

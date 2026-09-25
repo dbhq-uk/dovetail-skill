@@ -46,7 +46,9 @@ silently. A check that reports success because it could not run is worse than no
 **`--since`.** This is what makes adoption possible. A repository with existing drift cannot
 switch on a whole-repository check without every unrelated pull request going red, so nobody
 switches it on. `--since` scopes findings to the files the pull request actually touched, so
-contributors are only held to what they changed. Accumulated debt belongs in the weekly job.
+contributors are only held to what they changed. That includes a link in an untouched file
+that the pull request broke by deleting, renaming or editing its target. Accumulated debt
+belongs in the weekly job.
 
 **`--format github`.** Findings come back as workflow annotations, so they appear inline on
 the diff rather than in a log nobody opens. `high` findings annotate as errors, everything

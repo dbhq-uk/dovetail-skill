@@ -16,7 +16,7 @@ anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUM
 | Flag | Default | Meaning |
 |---|---|---|
 | `--format json\|github` | `json` | JSON to stdout, or GitHub workflow annotations |
-| `--since REF` | off | Only report findings whose evidence touches files changed since `REF` |
+| `--since REF` | off | Only report findings that touch a file changed since `REF`: an evidence file, or the target of a broken link or anchor, deleted and renamed files included |
 | `--fail-on none\|low\|medium\|high` | `none` | Exit non-zero when a finding at or above this severity exists |
 | `--ignore GLOB` | none | Exclude a glob. Repeatable, and combines with `ignore` in the config |
 
@@ -242,5 +242,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 477 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 488 tests, no model calls, no network
 ```

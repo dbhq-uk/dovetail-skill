@@ -147,6 +147,26 @@ def _resolve(src: str, target: str, known: set[str], *,
     return None
 
 
+def written_target(src: str, raw: str) -> str | None:
+    """The repo-relative path a reference names, whether or not it exists.
+
+    `--since` needs this for a link that no longer resolves: its `dst` is
+    None, but the path it was written to point at is what a deleted or
+    renamed file shows up as in the diff.
+    """
+    if _is_external(raw):
+        return None
+    path_part, _ = _split_anchor(raw)
+    if not path_part:
+        return src
+    path_part = unquote(_unbracket(path_part))
+    if path_part.startswith('/'):
+        candidate = path_part.lstrip('/')
+    else:
+        candidate = posixpath.normpath(posixpath.join(posixpath.dirname(src), path_part))
+    return None if candidate.startswith('..') or candidate == '.' else candidate
+
+
 def _split_anchor(target: str) -> tuple[str, str | None]:
     if '#' not in target:
         return target, None
