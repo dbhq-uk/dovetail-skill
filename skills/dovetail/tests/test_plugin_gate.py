@@ -87,6 +87,21 @@ class TestPluginGate(Case):
         write(self.repo, '.dovetail/config.toml', '[plugins.loud]\ngate = false\n')
         self.assertEqual(exit_code(run_scan(self.repo), 'high'), 0)
 
+    def test_a_plugin_that_raises_fails_the_build_without_the_opt_in(self):
+        # The gate opt-in is about a plugin's findings. A plugin that could
+        # not run is an incomplete result, and that fails like a broken check.
+        write(self.repo, '.dovetail/checks/loud.py',
+              'def check(inventory, graph):\n    raise RuntimeError("boom")\n')
+        self.assertEqual(self.scan('--fail-on', 'low').returncode, 1)
+        self.assertEqual(self.scan('--fail-on', 'none').returncode, 0)
+
+    def test_the_degradation_notes_say_a_raising_plugin_fails_the_build(self):
+        for rel in ('docs/architecture.md', 'skills/dovetail/SKILL.md'):
+            rows = [line for line in read(rel).splitlines()
+                    if '`.dovetail/checks/` plugin' in line and 'raises' in line]
+            self.assertEqual(len(rows), 1, rel)
+            self.assertIn('exits `1`', rows[0].lower(), rel)
+
     def test_the_result_names_the_gated_plugin(self):
         write(self.repo, '.dovetail/config.toml', '[plugins.loud]\ngate = true\n')
         result = run_scan(self.repo)

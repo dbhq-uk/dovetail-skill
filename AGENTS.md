@@ -73,7 +73,7 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 650 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 652 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```

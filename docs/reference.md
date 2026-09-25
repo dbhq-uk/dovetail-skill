@@ -323,8 +323,9 @@ Repo-local checks. A module exposing `check(inventory, graph)` and returning a l
 findings with at least `id`, `source`, `category`, `problem`, `evidence`, `suggestion` and
 `severity`. `from store import make_finding` builds one with the same line-free `id` a built-in
 finding has. `source` is rewritten to `plugin:<module>`. Names beginning with `_` are skipped.
-A plugin that raises is named in `failed_checks` and skipped. Its findings fail `--fail-on`
-only when `[plugins.<module>] gate = true` is in the config. `--no-plugins` skips them all,
+A plugin that raises is named in `failed_checks`, which fails `--fail-on` like any failed
+check, opted in or not. Its findings fail `--fail-on` only when `[plugins.<module>] gate = true`
+is in the config. `--no-plugins` skips them all,
 and a `check` function in one is an entry point, never dead code.
 
 See [writing a repo-local check](guides/custom-checks.md).
@@ -354,5 +355,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 650 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 652 tests, no model calls, no network
 ```

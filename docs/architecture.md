@@ -175,8 +175,7 @@ without git.
 | What fails | What happens |
 |---|---|
 | A reviewer errors or returns malformed output | Named in the header, run continues |
-| A `.dovetail/checks/` plugin raises | Named in `failed_checks`, skipped |
-| A built-in check raises | Named in `failed_checks`; exits `1` if `--fail-on` is set |
+| A built-in check or a `.dovetail/checks/` plugin raises | Named in `failed_checks`, and its findings are missing. Exits `1` if `--fail-on` is not `none`, whether or not the plugin's findings gate |
 | git is not installed | **Exit 2**, naming the missing binary |
 | `--since` cannot resolve its ref | **Exit 2, loudly** |
 
