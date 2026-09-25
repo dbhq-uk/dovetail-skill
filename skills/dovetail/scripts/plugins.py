@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import time
 import traceback
 
 CHECKS_REL = os.path.join('.dovetail', 'checks')
@@ -38,10 +39,12 @@ REQUIRED_KEYS = {'id', 'source', 'category', 'problem', 'evidence',
 class PluginResult:
     """What one plugin produced, including how it failed if it did."""
 
-    def __init__(self, name: str, findings: list[dict], error: str | None = None):
+    def __init__(self, name: str, findings: list[dict], error: str | None = None,
+                 seconds: float = 0.0):
         self.name = name
         self.findings = findings
         self.error = error
+        self.seconds = seconds
 
 
 def _validate(name: str, findings: object) -> list[dict]:
@@ -97,6 +100,7 @@ def run_plugins(repo_root: str, inventory: dict, graph: dict) -> list[PluginResu
         sys.path.append(SCRIPTS_DIR)
     for path in discover_plugins(repo_root):
         name = os.path.splitext(os.path.basename(path))[0]
+        started = time.perf_counter()
         try:
             spec = importlib.util.spec_from_file_location(f'dovetail_plugin_{name}', path)
             if spec is None or spec.loader is None:
@@ -109,9 +113,10 @@ def run_plugins(repo_root: str, inventory: dict, graph: dict) -> list[PluginResu
             findings = _validate(name, entry(inventory, graph))
         except Exception as exc:  # a user plugin must not take down the run
             detail = traceback.format_exception_only(type(exc), exc)[-1].strip()
-            results.append(PluginResult(name, [], error=detail))
+            results.append(PluginResult(name, [], error=detail,
+                                        seconds=time.perf_counter() - started))
             continue
         for finding in findings:
             finding['source'] = f'plugin:{name}'
-        results.append(PluginResult(name, findings))
+        results.append(PluginResult(name, findings, seconds=time.perf_counter() - started))
     return results

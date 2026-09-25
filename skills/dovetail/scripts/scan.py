@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import bootstrap
 
@@ -55,8 +56,14 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     config = load_config(root)
     ignore = list(ignore or []) + list(config['ignore'])
 
+    # Seconds per step, so a slow check is visible rather than a slow scan.
+    timings: dict[str, float] = {}
+    started = time.perf_counter()
     inventory = discover(root, ignore=ignore)
+    timings['discover'] = _since(started)
+    started = time.perf_counter()
     graph = build_graph(root, inventory)
+    timings['graph'] = _since(started)
 
     findings: list[dict] = []
     failed_checks: list[str] = []
@@ -65,11 +72,14 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
         name = check.__name__
         if not check_enabled(config, name):
             continue
+        started = time.perf_counter()
         try:
             produced = check(inventory, graph)
         except Exception:  # a broken check must not take down the run
             failed_checks.append(name)
             continue
+        finally:
+            timings[name] = _since(started)
         tier = 'heuristic' if name in HEURISTIC_CHECKS else 'proven'
         for finding in produced:
             finding['check'] = name
@@ -80,6 +90,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     # run. A plugin that raises is named, not fatal. Its findings are
     # heuristic: nothing about a plugin says its rule is certain.
     for result in plugin_runner.run_plugins(root, inventory, graph):
+        timings[f'plugin:{result.name}'] = round(result.seconds, 3)
         if result.error:
             failed_checks.append(f'plugin:{result.name} ({result.error})')
         else:
@@ -132,7 +143,12 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             'counts': counts, 'failed_checks': failed_checks,
             'profile': config['profile'], 'gate': gated_checks(config),
             'file_count': len(inventory['files']),
-            'edge_count': len(graph['edges'])}
+            'edge_count': len(graph['edges']),
+            'timings': timings}
+
+
+def _since(started: float) -> float:
+    return round(time.perf_counter() - started, 3)
 
 
 # Findings about a link, where the change that caused them is usually to the

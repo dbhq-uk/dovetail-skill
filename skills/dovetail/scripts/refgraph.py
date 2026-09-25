@@ -32,6 +32,7 @@ import re
 import sys
 from urllib.parse import unquote
 
+import textcache
 from slugify import anchor_ids, track_fence
 
 TEXT_MODALITIES = {'text', 'vector_diagram'}
@@ -421,7 +422,8 @@ def _scan_logical(lineno: int, text: str, allowed: frozenset) -> list[tuple[int,
 
 def build_graph(repo_root: str, inventory: dict) -> dict:
     """Build the reference graph for an inventory."""
-    root = os.path.abspath(repo_root)
+    if 'repo_root' not in inventory:  # a hand-built inventory, as tests make
+        inventory = {**inventory, 'repo_root': os.path.abspath(repo_root)}
     # Resolution must see the whole repository even when reporting is scoped
     # by --ignore: `inventory['files']` is filtered, but a link into an
     # ignored path is still a real, resolvable file on disk. Falling back to
@@ -435,10 +437,8 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
     headings: dict[str, list[str]] = {}
 
     for path in text_paths:
-        try:
-            with open(os.path.join(root, path), 'r', encoding='utf-8', errors='replace') as fh:
-                body = fh.read()
-        except OSError:
+        body = textcache.read(inventory, path, strict=False)
+        if body is None:
             continue
 
         if path.lower().endswith(('.md', '.markdown')):

@@ -26,9 +26,10 @@ evidence is real but imprecise, and the two bars are different.
 from __future__ import annotations
 
 import ast
-import os
 import posixpath
 import re
+
+import textcache
 
 # A literal that names a file extension, e.g. '.md' or '.py'. Bounded at
 # five characters so a dot-directory like '.dovetail' is not read as one.
@@ -148,7 +149,6 @@ def _rules_from_shell(path: str, source: str) -> list[Rule]:
 
 def collect_rules(inventory: dict) -> list[Rule]:
     """Every dynamic-reference rule the repository's own code implies."""
-    root = inventory['repo_root']
     rules: list[Rule] = []
     for entry in inventory['files']:
         path = entry['path']
@@ -156,11 +156,8 @@ def collect_rules(inventory: dict) -> list[Rule]:
             continue
         if not path.endswith(('.py', '.sh', '.bash', '.yml', '.yaml')):
             continue
-        try:
-            with open(os.path.join(root, path), encoding='utf-8',
-                      errors='replace') as fh:
-                source = fh.read()
-        except OSError:
+        source = textcache.read(inventory, path, strict=False)
+        if source is None:
             continue
         if path.endswith('.py'):
             rules.extend(_rules_from_python(path, source))

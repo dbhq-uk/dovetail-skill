@@ -63,7 +63,8 @@ finding that does not gate is a warning.
   "profile": "default",
   "gate": [],
   "file_count": 474,
-  "edge_count": 3120
+  "edge_count": 3120,
+  "timings": {"discover": 0.061, "graph": 0.402, "broken_links": 0.001, "...": 0.0}
 }
 ```
 
@@ -78,6 +79,7 @@ finding that does not gate is a warning.
 | `gate` | Heuristic checks the config lets fail `--fail-on` |
 | `file_count` | Files inventoried |
 | `edge_count` | References resolved between them |
+| `timings` | Seconds each step took: `discover`, `graph`, every check that ran, and each plugin as `plugin:<name>`. A slow check shows here rather than as a slow scan |
 
 ### A finding
 
@@ -340,5 +342,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 600 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 609 tests, no model calls, no network
 ```

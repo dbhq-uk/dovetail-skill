@@ -22,9 +22,10 @@ complete agreement.
 
 from __future__ import annotations
 
-import os
 import re
 from collections import defaultdict
+
+import textcache
 
 # Entities worth grouping on: each is a token whose value is a fact a document
 # can be wrong about. Prose nouns are deliberately excluded - grouping on
@@ -70,12 +71,8 @@ _SENTENCE = re.compile(r'(?<=[.!?])\s+|\n')
 _FENCE = re.compile(r'^```.*?^```', re.S | re.M)
 
 
-def _read(repo_root: str, path: str) -> str | None:
-    try:
-        with open(os.path.join(repo_root, path), encoding='utf-8') as fh:
-            return fh.read()
-    except (OSError, UnicodeDecodeError):
-        return None
+def _read(inventory: dict, path: str) -> str | None:
+    return textcache.read(inventory, path)
 
 
 def _spans(text: str) -> list[tuple[int, str]]:
@@ -175,14 +172,13 @@ def build_clusters(inventory: dict, graph: dict) -> list[dict]:
     those spans live in at least two different files: a document repeating its
     own flag name is not a candidate contradiction with itself.
     """
-    repo_root = inventory['repo_root']
     by_entity: dict[tuple[str, str], list[dict]] = defaultdict(list)
 
     for entry in inventory['files']:
         path = entry['path']
         if not path.lower().endswith(('.md', '.markdown')):
             continue
-        text = _read(repo_root, path)
+        text = _read(inventory, path)
         if text is None:
             continue
         for line, span in _spans(text):
