@@ -70,7 +70,7 @@ For `[checks]` and `[gate]`. These are the function names, so a disabled or gate
 
 ## Reviewers
 
-For `[reviewers.<name>]`: `xref`, `convention`, `code-hygiene`, `contradiction`, `staleness`, `spec-flow`, `claim-extract`.
+For `[reviewers.<name>]`: `xref`, `convention`, `code-hygiene`, `contradiction`, `staleness`, `spec-flow`.
 
 Keys are `enabled` (bool), `model` (`haiku` / `sonnet` / `opus`) and `effort` (`low` / `medium` / `high`).
 

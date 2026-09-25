@@ -199,7 +199,7 @@ check's name in `check` and its tier in `tier`.
 | `orphans` | Files nothing references | `graph` | heuristic |
 | `exact_duplicates` | Byte-identical files. A symlink is not a copy of its target | `graph` | proven |
 | `near_duplicates` | Files that are nearly identical | `graph` | heuristic |
-| `translation_lag` | Translations behind their base document | `graph` | heuristic |
+| `translation_lag` | Translations behind their base document. `docs/<locale>/<name>` is compared with `docs/en/<name>`, or the root `README.md` for a README, or else `docs/<name>` when `<locale>` is an ISO 639-1 code | `graph` | heuristic |
 | `flag_drift` | Documented flags a script does not declare | `check:flags` | proven |
 | `unparseable_code_blocks` | ` ```python ` / ` ```json ` / ` ```toml ` blocks that do not parse, after removing their common indent | `check:codeblock` | proven |
 | `missing_paths` | Backticked repository paths in prose that do not exist | `check:paths` | heuristic |
@@ -225,8 +225,8 @@ Categories the deterministic layer owns, and which reviewers must therefore neve
 
 ## Reviewers
 
-Six are dispatched for findings; `claim-extract` feeds the contradiction reviewer rather than
-reporting.
+Six, each dispatched for findings. The contradiction reviewer's candidates are extracted and
+clustered in Python by `claimscan.py`, so no reviewer is paid to extract claims.
 
 | Reviewer | Model | Effort | What it is left with |
 |---|---|---|---|
@@ -355,5 +355,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 652 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 657 tests, no model calls, no network
 ```

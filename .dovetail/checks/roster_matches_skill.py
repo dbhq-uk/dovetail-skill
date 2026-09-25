@@ -63,10 +63,6 @@ def check(inventory, graph):
     documented = _documented(skill_text)
     findings = []
     for name, (model, effort) in sorted(declared.items()):
-        # claim-extract feeds another reviewer and is not dispatched for
-        # findings, so SKILL.md's dispatch table correctly omits it.
-        if name == 'claim-extract':
-            continue
         if name not in documented:
             findings.append(make_finding(
                 source='plugin:roster_matches_skill',

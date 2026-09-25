@@ -245,6 +245,34 @@ class TestTranslationLag(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn('docs/ja/setup.md', [e['file'] for e in found[0]['evidence']])
 
+    def test_flat_layout_uses_the_doc_at_the_top_of_docs(self):
+        # docs/ja/config.md translating docs/config.md, with no docs/en/.
+        entries = [
+            entry('docs/config.md', when='2026-07-01T00:00:00+00:00'),
+            entry('docs/ja/config.md', when='2026-01-01T00:00:00+00:00'),
+            entry('docs/pt-BR/config.md', when='2026-01-01T00:00:00+00:00'),
+        ]
+        found = translation_lag(inv(entries), graph())
+        self.assertEqual(sorted(e['file'] for f in found for e in f['evidence']),
+                         ['docs/config.md', 'docs/config.md',
+                          'docs/ja/config.md', 'docs/pt-BR/config.md'])
+
+    def test_docs_en_wins_over_the_flat_layout(self):
+        entries = [
+            entry('docs/en/config.md', when='2026-01-01T00:00:00+00:00'),
+            entry('docs/config.md', when='2026-07-01T00:00:00+00:00'),
+            entry('docs/ja/config.md', when='2026-03-01T00:00:00+00:00'),
+        ]
+        self.assertEqual(translation_lag(inv(entries), graph()), [])
+
+    def test_a_section_directory_is_not_a_locale(self):
+        # docs/ui/ is a section: `ui` is not an ISO 639-1 code.
+        entries = [
+            entry('docs/README.md', when='2026-07-01T00:00:00+00:00'),
+            entry('docs/ui/README.md', when='2026-01-01T00:00:00+00:00'),
+        ]
+        self.assertEqual(translation_lag(inv(entries), graph()), [])
+
     def test_missing_commit_times_are_skipped(self):
         entries = [entry('README.md', when=None), entry('docs/ja/README.md', when=None)]
         self.assertEqual(translation_lag(inv(entries), graph()), [])

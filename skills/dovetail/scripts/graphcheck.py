@@ -267,6 +267,20 @@ _FILENAME_TOKEN = re.compile(r'(?<![\w.-])([\w-]+\.[A-Za-z0-9]{1,8})(?![\w])')
 LOCALE_DIR = re.compile(r'^docs/([a-z]{2}(?:-[A-Za-z]{2,4})?)/(.+)$')
 BASE_LOCALE = 'en'
 
+# ISO 639-1 language codes. The flat layout, where `docs/ja/setup.md`
+# translates `docs/setup.md`, is only read for these: a two-letter directory
+# such as `docs/ui/` or `docs/db/` is far more often a section than a language.
+ISO_639_1 = frozenset('''
+    aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch
+    co cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga
+    gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja
+    jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv
+    mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or
+    os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr
+    ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi
+    vo wa wo xh yi yo za zh zu
+'''.split())
+
 
 def _is_entry_point(path: str) -> bool:
     """True for files that are legitimately referenced by nothing."""
@@ -581,9 +595,12 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
 def translation_lag(inventory: dict, graph: dict) -> list[dict]:
     """Translated documents whose last commit predates their base document.
 
-    Layout convention: multilingual docs live at `docs/<locale>/<name>`, with
-    the base at `docs/en/<name>`. The one exception is the repository-root
-    `README.md`, which is the English base for `docs/<locale>/README.md`.
+    A translation lives at `docs/<locale>/<name>`. Its base is the first of
+    these that exists:
+
+    - `docs/en/<name>`, when the English docs have a locale directory too
+    - the repository-root `README.md`, for `docs/<locale>/README.md`
+    - `docs/<name>`, the flat layout, when `<locale>` is an ISO 639-1 code
     """
     times = {e['path']: e['last_commit_iso'] for e in inventory['files']}
     findings = []
@@ -599,6 +616,8 @@ def translation_lag(inventory: dict, graph: dict) -> list[dict]:
         base = f'docs/{BASE_LOCALE}/{name}'
         if base not in times and name == 'README.md':
             base = 'README.md'
+        if base not in times and locale.split('-')[0] in ISO_639_1:
+            base = f'docs/{name}'
         if base not in times:
             continue
 

@@ -41,12 +41,11 @@ SEVERITIES = frozenset({'high', 'medium', 'low'})
 CONFIDENCES = frozenset({'high', 'medium', 'low'})
 SSOT = frozenset({'a', 'b', 'uncertain', 'n/a'})
 
-# The roster, with its default tiering. Extraction is high-volume and near
-# mechanical, so it runs cheap and parallel; adjudication is low-volume and
-# high-judgement, so the expensive model sees clusters rather than a corpus.
+# The roster, with its default tiering. Extracting the claims to compare is
+# mechanical, so claimscan.py does it in Python for nothing; adjudication is
+# low-volume and high-judgement, so the expensive model sees clusters rather
+# than a corpus.
 ROSTER: dict[str, dict] = {
-    'claim-extract': {'model': 'haiku',  'effort': 'low',
-                      'produces': 'claims'},
     'xref':          {'model': 'haiku',  'effort': 'low'},
     'convention':    {'model': 'sonnet', 'effort': 'medium'},
     'code-hygiene':  {'model': 'sonnet', 'effort': 'medium'},

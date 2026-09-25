@@ -79,7 +79,7 @@ Three profiles set what the judgement layer costs:
 
 | Profile | Effect |
 |---|---|
-| `default` | The per-reviewer tiering: haiku for extraction, sonnet for the middle, opus for adjudication |
+| `default` | The per-reviewer tiering: haiku for cross-references, sonnet for conventions and code, opus for contradictions, staleness and specs |
 | `cheap` | Every reviewer one tier down, escalation off |
 | `thorough` | Everything on the strongest model |
 
@@ -102,7 +102,7 @@ model = "opus"           # mostly shell, which needs the judgement
 
 Keys are `enabled`, `model` (`haiku`, `sonnet`, `opus`) and `effort` (`low`, `medium`,
 `high`). Reviewer names: `xref`, `convention`, `code-hygiene`, `contradiction`, `staleness`,
-`spec-flow`, `claim-extract`.
+`spec-flow`.
 
 Disabling a reviewer your repository has no material for is the highest-value change here. A
 repository with no diagrams pays `spec-flow` opus rates to confirm that every run.
