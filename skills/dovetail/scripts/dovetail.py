@@ -54,12 +54,10 @@ import bootstrap
 bootstrap.ensure()
 
 import ci_dispatch  # noqa: E402
-from config import ConfigError, load_config  # noqa: E402
-from discover import discover  # noqa: E402
-from refgraph import build_graph  # noqa: E402
+from config import ConfigError  # noqa: E402
 from reviewer import (  # noqa: E402
-    MATCH, MOVED, ROSTER, ValidationError, escalation_enabled,
-    needs_escalation, quote_verdict, resolve_roster, validate_findings,
+    MATCH, MOVED, ValidationError, escalation_enabled, needs_escalation,
+    quote_verdict, validate_findings,
 )
 from scan import SEVERITY_RANK, run_scan  # noqa: E402
 from store import DECISIONS_REL, append_decision, load_decisions  # noqa: E402
@@ -604,6 +602,16 @@ _OUTPUT_NOTE = (
     'repository. Reply with one line: how many findings you wrote.\n'
 )
 
+# Appended when a shard's output could not be parsed, before it goes out once
+# more. The scheduled job retries the same way (ci_dispatch.RETRY_SUFFIX): the
+# first attempt already carried the contract, so what failed was compliance.
+_RETRY_NOTE = (
+    '\n---\n\nIMPORTANT: this shard has been handed out before, and what was '
+    'written to the file above could not be parsed. Write a JSON array to that '
+    'file and nothing else - no explanation, no preamble, no code fence. If you '
+    'found nothing, write exactly: []\n'
+)
+
 
 def _write_shard(root: str, manifest: dict, *, shard_id: str, reviewer: str,
                  model: str, effort: str, prompt: str, kind: str = 'review',
@@ -616,48 +624,48 @@ def _write_shard(root: str, manifest: dict, *, shard_id: str, reviewer: str,
     manifest['shards'].append({
         'id': shard_id, 'reviewer': reviewer, 'model': model, 'effort': effort,
         'kind': kind, 'held': held, 'items': items, 'status': 'pending',
-        'prompt': prompt_path, 'result': result_path, 'note': None,
+        'attempt': 1, 'prompt': prompt_path, 'result': result_path, 'note': None,
     })
+
+
+def _retry_shard(shard: dict) -> None:
+    """Hand an unparseable shard out once more, with the contract restated."""
+    with open(shard['prompt'], 'a', encoding='utf-8') as fh:
+        fh.write(_RETRY_NOTE)
+    os.remove(shard['result'])
+    shard['attempt'] = shard.get('attempt', 1) + 1
+    shard['status'] = 'pending'
 
 
 def cmd_prepare_review(args: argparse.Namespace) -> int:
     root = os.path.realpath(args.repo)
     state = load_state(root)
-    config = load_config(root)
-    profile = args.profile or config['profile']
-    roster = resolve_roster(profile, config.get('reviewers'))
-    names = [n for n in ROSTER if roster[n].get('enabled', True)
-             and ROSTER[n].get('produces') != 'claims']
-    if args.reviewers:
-        unknown = sorted(set(args.reviewers) - set(names))
-        if unknown:
-            raise RunError(f"unknown or disabled reviewer: {', '.join(unknown)}")
-        names = [n for n in names if n in args.reviewers]
-
-    ignore = list(config['ignore']) + list(state['options']['ignore'])
-    inventory = discover(root, ignore=ignore)
-    graph = build_graph(root, inventory)
+    # The scheduled job takes its shards from the same plan, so an interactive
+    # run and a CI run of the same repository shard it the same way.
+    plan = ci_dispatch.plan_shards(root, profile=args.profile, only=args.reviewers,
+                                   ignore=state['options']['ignore'])
 
     directory = _review_dir(root)
     shutil.rmtree(directory, ignore_errors=True)
     _private_dir(directory)
-    manifest = {'profile': profile, 'shards': []}
-    lines = []
-    for name in names:
-        batches = ci_dispatch._batches(ci_dispatch._context_for(name, inventory, graph))
-        entry = roster[name]
-        for index, batch in enumerate(batches, start=1):
-            size = len(batch.get('clusters') or batch.get('files') or [])
-            _write_shard(root, manifest, shard_id=f'{name}-{index:02d}', reviewer=name,
-                         model=entry['model'], effort=entry['effort'],
-                         prompt=ci_dispatch.build_prompt(name, root, batch), items=size)
-        unit = 'clusters' if name == 'contradiction' else 'files'
-        covered = sum(len(b.get('clusters') or b.get('files') or []) for b in batches)
-        lines.append(f"  {name:<14} {entry['model'] + '/' + entry['effort']:<14} "
-                     f'{len(batches):>3} shard(s), {covered} {unit}')
+    manifest = {'profile': plan['profile'], 'shards': []}
+    for shard in plan['shards']:
+        _write_shard(root, manifest, shard_id=f"{shard['reviewer']}-{shard['index']:02d}",
+                     reviewer=shard['reviewer'], model=shard['model'],
+                     effort=shard['effort'], prompt=shard['prompt'],
+                     items=shard['items'])
     _write_json(_manifest_path(root), manifest)
+
+    lines = []
+    for name in plan['reviewers']:
+        entry = plan['roster'][name]
+        mine = [s for s in plan['shards'] if s['reviewer'] == name]
+        unit = 'clusters' if name == 'contradiction' else 'files'
+        lines.append(f"  {name:<14} {entry['model'] + '/' + entry['effort']:<14} "
+                     f"{len(mine):>3} shard(s), {sum(s['items'] for s in mine)} {unit}")
     total = len(manifest['shards'])
-    print(f'review      {len(names)} reviewer(s), {total} shard(s), profile {profile}')
+    print(f"review      {len(plan['reviewers'])} reviewer(s), {total} shard(s), "
+          f"profile {plan['profile']}")
     print('\n'.join(lines))
     print(f'dispatch    python3 {SCRIPT} wave --repo {root}')
     return 0
@@ -685,14 +693,6 @@ def cmd_wave(args: argparse.Namespace) -> int:
     return 0
 
 
-_ESCALATE_NOTE = (
-    'A cheaper reviewer produced this finding but was not confident. Judge it: '
-    'is it real?\n\n```json\n{finding}\n```\n\nReply with a JSON array: the '
-    'finding with `confidence` corrected if it is real, or an empty array if it '
-    'is not.'
-)
-
-
 def _rejection_kind(message: str) -> str:
     if 'edited after' in message:
         return 'stale'
@@ -709,9 +709,10 @@ def cmd_import_review(args: argparse.Namespace) -> int:
     profile = manifest['profile']
     entries = state['entries']
 
-    imported = queued = known = suppressed = held = 0
+    imported = queued = known = suppressed = held = released = 0
     dropped: list[str] = []
     failed: list[str] = []
+    retried: list[str] = []
     for shard in list(manifest['shards']):
         if shard['status'] not in ('pending', 'dispatched'):
             continue
@@ -723,9 +724,19 @@ def cmd_import_review(args: argparse.Namespace) -> int:
         try:
             found = validate_findings(raw, shard['reviewer'], root, rejected=rejected)
         except ValidationError as exc:
-            shard['status'] = 'failed'
             shard['note'] = str(exc)[:300]
+            if shard.get('attempt', 1) < 2:
+                _retry_shard(shard)
+                retried.append(shard['id'])
+                continue
+            shard['status'] = 'failed'
             failed.append(f"{shard['id']}: {shard['note'][:160]}")
+            held_entry = entries.get(shard['held']) if shard['kind'] == 'escalate' else None
+            if held_entry is not None and held_entry['status'] == 'held':
+                # A failed escalation must not lose the finding. It stays at the
+                # confidence its reviewer gave it, as it does in the scheduled job.
+                held_entry['status'] = 'queued'
+                released += 1
             continue
         shard['status'] = 'imported'
         imported += 1
@@ -752,10 +763,9 @@ def cmd_import_review(args: argparse.Namespace) -> int:
                     and needs_escalation(finding, shard['model'])):
                 entry['status'] = 'held'
                 held += 1
-                body = json.dumps(finding, indent=2, ensure_ascii=False)
                 _write_shard(root, manifest, shard_id=f"escalate-{entry['short']}",
                              reviewer=shard['reviewer'], model='opus', effort='high',
-                             prompt=_ESCALATE_NOTE.format(finding=body),
+                             prompt=ci_dispatch.escalation_prompt(finding),
                              kind='escalate', held=finding['id'], items=1)
             else:
                 queued += 1
@@ -771,10 +781,17 @@ def cmd_import_review(args: argparse.Namespace) -> int:
     if dropped:
         print('dropped     ' + ' · '.join(dropped[:8])
               + (f' and {len(dropped) - 8} more' if len(dropped) > 8 else ''))
+    if retried:
+        print(f'retry       {len(retried)} shard(s) wrote something that is not a JSON '
+              f"array, and go out once more in the next wave: {', '.join(retried[:8])}"
+              + (f' and {len(retried) - 8} more' if len(retried) > 8 else ''))
     if failed:
         print(f'failed      {len(failed)} shard(s), their findings are missing:')
         for line in failed[:8]:
             print(f'  {line}')
+    if released:
+        print(f'released    {released} held finding(s) whose escalation failed are '
+              'queued at the confidence their reviewer gave')
     print(f'waiting     {waiting} shard(s) not yet imported')
     return 0
 

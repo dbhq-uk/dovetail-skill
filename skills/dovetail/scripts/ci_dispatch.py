@@ -3,20 +3,21 @@
 Headless reviewer fan-out for the scheduled CI job.
 
 This is the *only* place a headless path exists. Interactively, judgement
-reviewers run as in-session subagents driven by SKILL.md; that path is richer
-and is where all the triage lives. This shim exists because a weekly unattended
-audit cannot hold a conversation.
+reviewers run as in-session subagents, one per shard, handed out in waves by
+dovetail.py; that path is where all the triage lives. This shim exists because
+a weekly unattended audit cannot hold a conversation.
 
 A second dispatch path is a real maintenance risk, and the mitigation is to give
 it as little surface of its own as possible:
 
-  * it reads the same rubrics from references/reviewers/
+  * both paths get their shards from plan_shards() here, so they shard the
+    same files into the same batches and send the same prompt to the same model
+  * both escalate with escalation_prompt() and retry unparseable output once
   * it validates against the same schema, via reviewer.validate_findings
   * it contains no triage logic, no rendering, and no write path
 
-Everything interactive stays in SKILL.md, which CI never invokes. A contract
-test asserts both paths emit schema-valid findings from the same fixture, so a
-schema change cannot land green while quietly breaking this one.
+A contract test runs both paths on one repository and asserts they send the
+same prompts to the same models, so neither can drift from the other quietly.
 
 Usage:
   ci_dispatch.py <repo-path> [--profile default|cheap|thorough]
@@ -190,39 +191,88 @@ def _batches(context: dict) -> list[dict]:
             for i in range(0, len(files), FILES_PER_BATCH)]
 
 
-def dispatch(repo_root: str, profile: str = 'default',
-             only: list[str] | None = None,
-             timeout: int = DEFAULT_TIMEOUT) -> dict:
-    """Run the judgement layer headlessly and return findings plus failures."""
+def enabled_reviewers(roster: dict) -> list[str]:
+    """Reviewers that produce findings and are switched on, in roster order.
+
+    claim-extract feeds the contradiction reviewer rather than emitting
+    findings; the clustering it would serve is already done in Python.
+    """
+    return [name for name in ROSTER if roster[name].get('enabled', True)
+            and ROSTER[name].get('produces') != 'claims']
+
+
+def plan_shards(repo_root: str, profile: str | None = None,
+                only: list[str] | None = None,
+                ignore: list[str] | tuple[str, ...] = ()) -> dict:
+    """Every reviewer shard for one repository. Both dispatch paths run this plan.
+
+    The scheduled job runs each shard as a `claude -p` call. An interactive run
+    (dovetail.py prepare-review) writes each one to a prompt file for a
+    subagent. Because both take their shards from here, the same repository
+    gets the same batches, the same prompts and the same models either way.
+
+    `only` names reviewers to run. A name that is unknown or switched off is
+    an error, not an empty result: a reviewer that silently did not run looks
+    exactly like one that found nothing.
+    """
     root = os.path.abspath(repo_root)
     config = load_config(root)
     profile = profile or config['profile']
     roster = resolve_roster(profile, config.get('reviewers'))
+    names = enabled_reviewers(roster)
+    if only:
+        unknown = sorted(set(only) - set(names))
+        if unknown:
+            raise ValueError(f"unknown or disabled reviewer: {', '.join(unknown)}")
+        names = [name for name in names if name in only]
 
-    inventory = discover(root, ignore=config['ignore'])
+    inventory = discover(root, ignore=list(config['ignore']) + list(ignore))
     graph = build_graph(root, inventory)
 
-    names = [n for n in ROSTER if roster[n].get('enabled', True)]
-    if only:
-        names = [n for n in names if n in only]
-    # claim-extract feeds the contradiction reviewer rather than emitting
-    # findings; the clustering it would serve is already done in Python here.
-    names = [n for n in names if ROSTER[n].get('produces') != 'claims']
-
-    findings: list[dict] = []
-    failed: list[str] = []
-
-    jobs: list[tuple[str, dict, int, int]] = []
+    shards: list[dict] = []
     for name in names:
         batches = _batches(_context_for(name, inventory, graph))
         for index, batch in enumerate(batches, start=1):
-            jobs.append((name, batch, index, len(batches)))
+            shards.append({
+                'reviewer': name, 'index': index, 'total': len(batches),
+                'batch': batch,
+                'items': len(batch.get('clusters') or batch.get('files') or []),
+                'model': roster[name]['model'], 'effort': roster[name]['effort'],
+                'prompt': build_prompt(name, root, batch),
+            })
+    return {'root': root, 'profile': profile, 'roster': roster,
+            'reviewers': names, 'shards': shards}
 
-    def run_one(job: tuple[str, dict, int, int]) -> tuple[str, list[dict] | None, str | None]:
-        name, batch, index, total = job
+
+def escalation_prompt(finding: dict) -> str:
+    """The prompt that re-judges one low-confidence finding on opus."""
+    return (
+        'A cheaper reviewer produced this finding but was not confident. '
+        'Judge it: is it real?\n\n'
+        '```json\n' + json.dumps(finding, indent=2, ensure_ascii=False) + '\n```\n\n'
+        'Reply with a JSON array: the finding with `confidence` corrected '
+        'if it is real, or an empty array if it is not.'
+    )
+
+
+def dispatch(repo_root: str, profile: str = 'default',
+             only: list[str] | None = None,
+             timeout: int = DEFAULT_TIMEOUT) -> dict:
+    """Run the judgement layer headlessly and return findings plus failures."""
+    plan = plan_shards(repo_root, profile=profile, only=only)
+    root = plan['root']
+    profile = plan['profile']
+    roster = plan['roster']
+    names = plan['reviewers']
+
+    findings: list[dict] = []
+    failed: list[str] = []
+    jobs = plan['shards']
+
+    def run_one(shard: dict) -> tuple[str, list[dict] | None, str | None]:
+        name, index, total = shard['reviewer'], shard['index'], shard['total']
         label = name if total == 1 else f'{name} [{index}/{total}]'
-        entry = roster[name]
-        prompt = build_prompt(name, root, batch)
+        prompt = shard['prompt']
         rejected: list[str] = []
         last_error = None
 
@@ -234,7 +284,7 @@ def dispatch(repo_root: str, profile: str = 'default',
             try:
                 raw = run_claude(
                     prompt if attempt == 0 else prompt + RETRY_SUFFIX,
-                    entry['model'], root, timeout=timeout)
+                    shard['model'], root, timeout=timeout)
             except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError,
                     OSError) as exc:
                 return label, None, f'{type(exc).__name__}: {exc}'[:400]
@@ -301,15 +351,9 @@ def _escalate(repo_root: str, findings: list[dict], roster: dict,
         if not needs_escalation(finding, model):
             keep.append(finding)
             continue
-        prompt = (
-            'A cheaper reviewer produced this finding but was not confident. '
-            'Judge it: is it real?\n\n'
-            '```json\n' + json.dumps(finding, indent=2, ensure_ascii=False) + '\n```\n\n'
-            'Reply with a JSON array: the finding with `confidence` corrected '
-            'if it is real, or an empty array if it is not.'
-        )
         try:
-            raw = run_claude(prompt, 'opus', repo_root, timeout=timeout)
+            raw = run_claude(escalation_prompt(finding), 'opus', repo_root,
+                             timeout=timeout)
             judged = validate_findings(raw, name, repo_root)
         except (RuntimeError, ValidationError, subprocess.TimeoutExpired,
                 FileNotFoundError, OSError) as exc:

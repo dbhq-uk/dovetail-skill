@@ -29,8 +29,9 @@ signals and any repo-local plugins. Seconds, no model, no network.
 holds the roster, tiering and the shared validator;
 [`claimscan.py`](skills/dovetail/scripts/claimscan.py) narrows contradiction
 candidates into clusters. Reviewers run as in-session subagents interactively,
-or through [`ci_dispatch.py`](skills/dovetail/scripts/ci_dispatch.py) for the
-scheduled job. Rubrics live in `skills/dovetail/references/reviewers/`, loaded by name
+one per shard, or through [`ci_dispatch.py`](skills/dovetail/scripts/ci_dispatch.py)
+for the scheduled job. Both paths take their shards from `ci_dispatch.plan_shards`,
+so they cannot shard the same repository differently. Rubrics live in `skills/dovetail/references/reviewers/`, loaded by name
 at dispatch time.
 
 **Layer 3, triage** - the conversation is in [`SKILL.md`](skills/dovetail/SKILL.md);
@@ -71,7 +72,7 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 531 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 534 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```
