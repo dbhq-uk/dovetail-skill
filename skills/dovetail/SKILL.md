@@ -29,7 +29,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py scan --repo <repo-path>
 
 It takes seconds: about 1.3 seconds of CPU on 1,000 files and about 4 on 3,000, so run it in the foreground. It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, stale decisions, and findings by category. It also snapshots every file, for write safety. `--since REF`, `--ignore GLOB` and `--no-plugins` work as they do for `scan.py`. Pass `--no-plugins` when the user does not trust the repository: `.dovetail/checks/*.py` is code from it, and runs on every scan.
 
-If it exits `2`, report the error and stop. The repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
+If it exits `2`, report the error and stop. git is not installed, the repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
 
 ### 2. Start the reviewers (unless the user said "quick" or "exact only")
 
@@ -194,7 +194,7 @@ Everything degrades; nothing crashes.
 
 - A shard that errors or returns malformed output → named, run continues
 - A `.dovetail/checks/` plugin that raises → named in the summary, skipped
-- git unavailable → co-change and TODO age skipped, everything else runs
+- git not installed → **exit 2**, naming the missing binary. There is no scan without it
 - `--since` against an unresolvable ref → **exit 2, loudly**
 
 ## Reference

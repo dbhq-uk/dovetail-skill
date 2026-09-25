@@ -55,8 +55,9 @@ writes to the repository. You get JSON:
 references resolved between them. If `edge_count` looks implausibly low, something is being
 excluded - check `ignore` in `.dovetail/config.toml`.
 
-If it exits `2`, read the error and stop rather than working around it. There are only two
-causes: the path is not a git checkout, or a `.dovetail/config.toml` is present and invalid.
+If it exits `2`, read the error and stop rather than working around it. There are only three
+causes: `git` is not installed, the path is not a git checkout, or a `.dovetail/config.toml`
+is present and invalid.
 A config you wrote is one you expect to take effect, so an invalid one halts the run instead
 of quietly falling back to defaults.
 
