@@ -63,7 +63,7 @@ Break any of these and it stops being the thing people can trust:
 ## Conventions
 
 - Python floor is **3.11**, standard library only. CI asserts the no-third-party-imports property, so an added dependency fails the build rather than quietly breaking the install story.
-- The floor binds the interpreter that *runs*, not `python3` specifically. [`bootstrap.py`](skills/dovetail/scripts/bootstrap.py) re-execs the original command line under the newest suitable interpreter on `PATH`, so a host with 3.10 as `python3` and 3.12 alongside is supported without touching the host. `bootstrap.ensure()` must be called before the first `tomllib` import on any path that reaches it - today that is `scan.py`, `config.py` and `exactcheck.py`.
+- The floor binds the interpreter that *runs*, not `python3` specifically. [`bootstrap.py`](skills/dovetail/scripts/bootstrap.py) re-execs the original command line under the newest suitable interpreter on `PATH`, so a host with 3.10 as `python3` and 3.12 alongside is supported without touching the host. `bootstrap.ensure()` must be called before the first `tomllib` import on any path that reaches it - today that is `scan.py`, `dovetail.py`, `config.py` and `exactcheck.py`.
 - SKILL.md references scripts via `${CLAUDE_SKILL_DIR}`, which Claude Code substitutes for personal, project and plugin installs alike. `install.sh` symlinks the whole skill directory with no rewrite; `install-codex.sh` rewrites the variable, since Codex does not substitute it.
 - Tests are hermetic: no network, and they build throwaway git repositories in temp dirs rather than touching anything real.
 - House style: British English, plain hyphens (no em or en dashes).
