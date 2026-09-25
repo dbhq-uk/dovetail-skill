@@ -2,9 +2,11 @@
 
 **Model tier:** Haiku, low effort. **Category:** `missing_xref`.
 
-The graph has produced candidate pairs: documents that discuss the same subject
-without linking to each other. Your job is to rank them against a bar, not to
-find them.
+You are given a batch of documents, and you may read anything else in the
+repository. For each document in the batch, look for another document that
+covers the same subject when neither links to the other. Nothing has found
+these pairs for you: finding them is your job, and the bar below decides which
+of them to report.
 
 ## The bar
 

@@ -196,13 +196,8 @@ def _batches(context: dict) -> list[dict]:
 
 
 def enabled_reviewers(roster: dict) -> list[str]:
-    """Reviewers that produce findings and are switched on, in roster order.
-
-    claim-extract feeds the contradiction reviewer rather than emitting
-    findings; the clustering it would serve is already done in Python.
-    """
-    return [name for name in ROSTER if roster[name].get('enabled', True)
-            and ROSTER[name].get('produces') != 'claims']
+    """Reviewers that are switched on, in roster order."""
+    return [name for name in ROSTER if roster[name].get('enabled', True)]
 
 
 def plan_shards(repo_root: str, profile: str | None = None,

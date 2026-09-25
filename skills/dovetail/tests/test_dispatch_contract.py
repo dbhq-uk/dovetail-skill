@@ -102,8 +102,6 @@ class SharedRubrics(Base):
         # A reviewer that reports a category Python owns is duplicating exact
         # work with a guess. Each rubric has to say so in its own words.
         for name in ROSTER:
-            if name == 'claim-extract':
-                continue  # feeds another reviewer; emits no findings
             with open(ci_dispatch.rubric_path(name), encoding='utf-8') as fh:
                 body = fh.read().lower()
             self.assertTrue('do not report' in body or 'deterministic' in body,
@@ -132,10 +130,28 @@ class ContextRouting(Base):
         context = ci_dispatch._context_for('staleness', *self._inputs())
         self.assertIn('files', context)
 
-    def test_claim_extract_is_not_dispatched_for_findings(self):
-        # It produces claims, not findings; the clustering it would serve is
-        # already done in Python. Dispatching it would pay for nothing.
-        self.assertEqual(ROSTER['claim-extract'].get('produces'), 'claims')
+    def test_every_roster_reviewer_is_dispatched(self):
+        # A reviewer with a rubric and a roster entry that no path dispatches
+        # is dead weight that reads as a feature. Everything in ROSTER runs.
+        roster = {name: {} for name in ROSTER}
+        self.assertEqual(ci_dispatch.enabled_reviewers(roster), list(ROSTER))
+
+    def test_only_the_contradiction_rubric_is_told_python_did_the_finding(self):
+        # xref's rubric once opened with "The graph has produced candidate
+        # pairs", and nothing produced them. Only contradiction gets clusters.
+        for name in ROSTER:
+            with open(ci_dispatch.rubric_path(name), encoding='utf-8') as fh:
+                body = fh.read()
+            if name == 'contradiction':
+                self.assertIn('Python has already grouped', body)
+            else:
+                self.assertNotIn('has produced candidate', body, name)
+                self.assertNotIn('has already grouped', body, name)
+
+    def test_every_rubric_belongs_to_a_roster_reviewer(self):
+        rubrics = sorted(name[:-3] for name in os.listdir(os.path.join(REFERENCES, 'reviewers'))
+                         if name.endswith('.md'))
+        self.assertEqual(rubrics, sorted(ROSTER))
 
 
 class Robustness(Base):
