@@ -174,6 +174,56 @@ class TestHtmlAndImports(GraphCase):
         edge = next(e for e in g['edges'] if e['kind'] == 'import')
         self.assertEqual(edge['dst'], 'src/b.ts')
 
+    def test_extensionless_import_resolves_to_the_ts_file(self):
+        write(self.repo, 'src/a.ts', 'import { b } from "./b";\n')
+        write(self.repo, 'src/b.ts', 'export const b = 1;\n')
+        g = self.graph(['src/a.ts', 'src/b.ts'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'import')
+        self.assertEqual(edge['dst'], 'src/b.ts')
+        self.assertEqual(g['inbound']['src/b.ts'], ['src/a.ts'])
+
+    def test_directory_import_resolves_to_its_index(self):
+        write(self.repo, 'src/a.ts', 'import { h } from "./lib/helpers";\n')
+        write(self.repo, 'src/lib/helpers/index.ts', 'export const h = 1;\n')
+        g = self.graph(['src/a.ts', 'src/lib/helpers/index.ts'])
+        edge = next(e for e in g['edges'] if e['kind'] == 'import')
+        self.assertEqual(edge['dst'], 'src/lib/helpers/index.ts')
+        self.assertEqual(g['inbound']['src/lib/helpers/index.ts'], ['src/a.ts'])
+
+    def test_extensionless_import_tries_each_extension(self):
+        cases = {'b.tsx': './b', 'types.d.ts': './types', 'util.mjs': './util',
+                 'conf.json': './conf', 'app.module.ts': './app.module',
+                 'ui/index.jsx': './ui', 'up.ts': '../src/up'}
+        for target, spec in cases.items():
+            with self.subTest(spec=spec):
+                write(self.repo, 'src/a.ts', f'import x from "{spec}";\n')
+                write(self.repo, f'src/{target}', 'x\n')
+                g = self.graph(['src/a.ts', f'src/{target}'])
+                edge = next(e for e in g['edges'] if e['kind'] == 'import')
+                self.assertEqual(edge['dst'], f'src/{target}')
+
+    def test_the_specifier_as_written_wins_over_an_implicit_extension(self):
+        # A specifier that resolves as written is never second-guessed.
+        write(self.repo, 'src/a.js', "import x from './data';\n")
+        write(self.repo, 'src/data', 'x\n')
+        write(self.repo, 'src/data.js', 'x\n')
+        g = self.graph(['src/a.js', 'src/data', 'src/data.js'])
+        self.assertEqual(next(e for e in g['edges'] if e['kind'] == 'import')['dst'],
+                         'src/data')
+
+    def test_an_extensionless_import_of_nothing_is_still_broken(self):
+        write(self.repo, 'src/a.ts', 'import { b } from "./missing";\n')
+        g = self.graph(['src/a.ts'])
+        self.assertIsNone(next(e for e in g['edges'] if e['kind'] == 'import')['dst'])
+
+    def test_extension_guessing_is_only_for_imports(self):
+        # A markdown link is relative to its file and written in full. Guessing
+        # an extension for it would hide a real broken link.
+        write(self.repo, 'README.md', 'See [b](src/b).\n')
+        write(self.repo, 'src/b.ts', 'x\n')
+        g = self.graph(['README.md', 'src/b.ts'])
+        self.assertIsNone(next(e for e in g['edges'] if e['kind'] == 'md_link')['dst'])
+
     def test_require_specifier(self):
         write(self.repo, 'src/a.js', "const b = require('./b.js');\n")
         write(self.repo, 'src/b.js', 'module.exports = 1;\n')
