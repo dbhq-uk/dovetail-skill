@@ -79,17 +79,32 @@ def _read(repo_root: str, path: str) -> str | None:
 
 
 def _spans(text: str) -> list[tuple[int, str]]:
-    """(line number, sentence) for each prose sentence, code blocks removed."""
+    """(line number, sentence) for each prose sentence, code blocks removed.
+
+    The line is the one the sentence starts on, counted from the sentence's
+    character offset. It used to be a running total bumped once per sentence,
+    which put the second sentence of a line on the next line and lost every
+    newline the sentence separator swallowed - so most spans cited the wrong
+    line, and the contradiction reviewer's quotes then failed validation.
+    Fenced blocks are replaced by the same number of newlines, so offsets in
+    `stripped` still line up with the file.
+    """
     stripped = _FENCE.sub(lambda m: '\n' * m.group(0).count('\n'), text)
     out: list[tuple[int, str]] = []
     line = 1
-    for chunk in _SENTENCE.split(stripped):
-        if chunk is None:
-            continue
+    counted = 0  # newlines before this offset are already in `line`
+    start = 0
+    ends = [(m.start(), m.end()) for m in _SENTENCE.finditer(stripped)]
+    ends.append((len(stripped), len(stripped)))
+    for end, resume in ends:
+        chunk = stripped[start:end]
         piece = chunk.strip()
         if piece and len(piece) <= MAX_SPAN_CHARS:
+            offset = start + len(chunk) - len(chunk.lstrip())
+            line += stripped.count('\n', counted, offset)
+            counted = offset
             out.append((line, piece))
-        line += chunk.count('\n') + (1 if '\n' not in chunk else 0)
+        start = resume
     return out
 
 
