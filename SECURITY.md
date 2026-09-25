@@ -19,6 +19,10 @@ orphans, duplicates, flag and signature drift, conventions and git-history
 signals are all computed locally, in Python, with no API key and no
 third-party packages.
 
+**External URLs are checked only when you ask**, with `--external-links`. That
+runs `lychee`, which requests every `http` and `https` URL in the repository's
+markdown from wherever it points. Without the flag, no URL is requested.
+
 **The judgement layer sends repository content to a model.** Contradictions,
 semantic staleness and spec drift are decided by reviewers, which read the
 files under review:
@@ -52,6 +56,8 @@ issue up to date.
 - `claude -p`, in the scheduled job only. Each reviewer may use the `Read`,
   `Glob` and `Grep` tools and nothing else.
 - `gh issue` and `gh label`, in the scheduled job only.
+- `lychee`, only when you pass `--external-links`, and only if it is on your
+  `PATH`. It gets the list of markdown files on stdin.
 
 It runs no other external commands.
 

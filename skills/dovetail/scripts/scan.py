@@ -11,6 +11,7 @@ Read-only: this never modifies the target repository.
 Usage:
   scan.py <repo-path> [--format json|github] [--since REF]
                       [--fail-on none|low|medium|high] [--ignore GLOB ...]
+                      [--no-plugins] [--external-links]
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ bootstrap.ensure()
 import cochange  # noqa: E402
 import convcheck
 import exactcheck
+import external
 import fixes
 import graphcheck
 import plugins as plugin_runner
@@ -44,11 +46,15 @@ SEVERITY_RANK = {'high': 0, 'medium': 1, 'low': 2}
 
 
 def run_scan(repo_root: str, *, ignore: list[str] | None = None,
-             since: str | None = None, plugins: bool = True) -> dict:
+             since: str | None = None, plugins: bool = True,
+             external_links: bool = False) -> dict:
     """Run every deterministic check and return findings plus counts.
 
     `plugins=False` skips `.dovetail/checks/`, which is code from the scanned
     repository. The result says so, rather than reading like a full scan.
+
+    `external_links=True` also checks external URLs through lychee, the one
+    step that uses the network. Its findings never gate.
     """
     root = os.path.abspath(repo_root)
     if not os.path.isdir(root):
@@ -62,6 +68,12 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
                          'to list the files to scan, so it will not run without it')
     if not is_git_repo(root):
         raise ValueError(f'not a git repository: {repo_root}')
+    # Asked for and impossible is an error, not a scan that quietly left the
+    # URLs out: a check that reports success because it could not run is
+    # worse than no check.
+    if external_links and not external.available():
+        raise ValueError('--external-links needs lychee on PATH, and it is not there. '
+                         'Install it (https://lychee.cli.rs) or drop the flag')
 
     # A present-but-invalid config raises rather than falling back: silently
     # ignoring it would hide findings the user meant to see.
@@ -99,6 +111,22 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             finding['check'] = name
             finding['tier'] = tier
         findings.extend(produced)
+
+    # External URLs only on request: the network, and somebody else's servers.
+    if external_links:
+        started = time.perf_counter()
+        try:
+            produced = external.external_links(root, inventory)
+        except Exception as exc:  # lychee failed: named, and fails --fail-on
+            failed_checks.append(f'{external.CHECK} ({exc})')
+        else:
+            ran.add(external.CHECK)
+            for finding in produced:
+                finding['check'] = external.CHECK
+                finding['tier'] = 'heuristic'
+            findings.extend(produced)
+        finally:
+            timings[external.CHECK] = _since(started)
 
     # Repo-local checks last, so a plugin can rely on everything above having
     # run. A plugin that raises is named, not fatal. Its findings are
@@ -354,6 +382,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--no-plugins', dest='plugins', action='store_false',
                         help='do not run .dovetail/checks/*.py, which is code from the '
                              'scanned repository')
+    parser.add_argument('--external-links', action='store_true',
+                        help='also check external URLs with lychee, which must be on '
+                             'PATH; uses the network, and its findings never gate')
     return parser
 
 
@@ -361,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         result = run_scan(args.repo, ignore=args.ignore, since=args.since,
-                          plugins=args.plugins)
+                          plugins=args.plugins, external_links=args.external_links)
     except ConfigError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
