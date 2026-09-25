@@ -111,3 +111,22 @@ producing one bad finding could not be trusted at all. That cost every finding
 from a reviewer whose remaining output was sound, and silently losing good
 findings is the worse failure.
 
+## The interactive run
+
+`SKILL.md` holds the rules an agent follows during a run, and not the reasons for them, because it loads into the agent's context on every run. The reasons are here.
+
+**The agent never reads the scan or the clusters.** On a repository of about 900 files the scan JSON and the contradiction clusters run to hundreds of kilobytes, which fills most of the context before the first question. `dovetail.py` keeps the run on disk and each verb prints only what the next step needs.
+
+**An invalid config stops the run.** A config the user wrote is one they expect to take effect. Carrying on with defaults would report a run they did not ask for as if it were the one they did.
+
+**Stale and fabricated quotes are reported apart.** A fabricated quote means that reviewer is unreliable, which is worth naming in the header. A stale one means only that dovetail's own fix moved the line under a reviewer that was still running.
+
+**Every decision is a question box.** A typed `fix` is a verb the user has to remember; an option is one they can see. On a host with no question box the same options go out as plain text, one finding per message, for the same reason.
+
+**Recommendations are rationed.** A recommendation is a claim, so it needs grounds from the repository itself. Choosing between editing the docs, editing the code, or recording that both are fine is a question about intent, which only the user can answer. And a recommendation on every finding trains the user to accept the first option without reading.
+
+**A ledger reason is never invented.** The ledger is committed and outlives the run. A ledger of guessed justifications is worse than one with gaps.
+
+**Every fix is followed by a rescan.** It is Python, so it costs nothing. Without it the loop is whack-a-mole; with it, fixing a root cause visibly shrinks the queue.
+
+**Write safety stops rather than merges.** With no git there is no undo, so dovetail will not write at all. The check hashes content because `git status --porcelain` cannot see a second edit to a file that is already modified. If anything changed that dovetail did not write, something else is editing the tree, and carrying on risks conflicting edits.

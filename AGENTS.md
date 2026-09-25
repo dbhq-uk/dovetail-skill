@@ -68,12 +68,13 @@ Break any of these and it stops being the thing people can trust:
 - SKILL.md references scripts via `${CLAUDE_SKILL_DIR}`, which Claude Code substitutes for personal, project and plugin installs alike. `install.sh` symlinks the whole skill directory with no rewrite; `install-codex.sh` rewrites the variable, since Codex does not substitute it.
 - Tests are hermetic: no network, and they build throwaway git repositories in temp dirs rather than touching anything real.
 - The CI templates check dovetail out at a pinned commit. A template cannot pin the commit that adds it, so after a change the templates rely on has merged, move `ref` in both templates and in `docs/guides/ci.md` in a commit of its own. `test_ci_templates.py` checks that all three agree and, where the history is present, that the pinned commit has what the templates use.
+- `SKILL.md` holds the rules an agent follows during a run, not the reasons for them: it loads on every run. A reason goes in `docs/design-notes.md`.
 - House style: British English, plain hyphens (no em or en dashes).
 
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 667 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 672 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```

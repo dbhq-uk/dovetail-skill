@@ -137,6 +137,44 @@ class TestAgentsFile(unittest.TestCase):
         self.assertEqual(count.group(1), NUMBER_WORDS.get(len(plugins), str(len(plugins))))
 
 
+
+class TestSkillFile(unittest.TestCase):
+    """What SKILL.md promises, and what it leaves to other documents."""
+
+    def setUp(self) -> None:
+        self.skill = read('skills/dovetail/SKILL.md')
+        frontmatter = self.skill.split('---')[1]
+        self.description = re.search(r'^description:\s*(.+)$', frontmatter, re.M).group(1)
+
+    def test_the_description_says_what_it_is_not_for(self):
+        self.assertIn('Not for code review or security audits', self.description)
+        self.assertIn('external URLs only when asked', self.description)
+
+    def test_no_trigger_that_belongs_to_a_review_skill(self):
+        # "check this repo" and "audit this repository" also mean code review.
+        for phrase in ('"check this repo"', '"audit this repository"'):
+            self.assertNotIn(phrase, self.description)
+
+    def test_the_limits_are_stated_in_the_skill_and_the_readmes(self):
+        for rel in ('skills/dovetail/SKILL.md', 'README.md', 'skills/dovetail/README.md'):
+            text = read(rel)
+            self.assertIn('`.mdx`', text, rel)
+            self.assertIn('--external-links', text, rel)
+
+    def test_hosts_without_claude_code_features_have_a_fallback(self):
+        self.assertIn('## Running outside Claude Code', self.skill)
+        for case in ('**No question box**', '**No model choice per subagent:**',
+                     '**No background subagents:**'):
+            self.assertIn(case, self.skill)
+
+    def test_the_reasons_live_in_the_design_notes(self):
+        # SKILL.md loads on every run, so its reasons were moved out.
+        notes = read('docs/design-notes.md')
+        for reason in ('whack-a-mole', 'guessed justifications',
+                       'accept the first option without reading'):
+            self.assertNotIn(reason, self.skill)
+            self.assertIn(reason, notes)
+
 class TestReadmeExample(unittest.TestCase):
     COMMAND = '$ python3 skills/dovetail/scripts/scan.py . --format github'
 
