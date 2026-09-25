@@ -354,5 +354,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 643 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 645 tests, no model calls, no network
 ```

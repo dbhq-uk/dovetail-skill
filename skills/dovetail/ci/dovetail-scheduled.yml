@@ -59,7 +59,7 @@ jobs:
           repository: dbhq-uk/dovetail-skill
           # A fixed commit, so this job runs the dovetail you chose rather
           # than whatever dovetail's main holds that day. Move it on purpose.
-          ref: f0273d86acd608a1bf20b7a19a469852953f3c28
+          ref: 6330dac402f41a02570e2878d99db3dee3fe9d67
           path: .dovetail-skill
 
       # Layer 1 first and separately: it needs no model, so its findings exist

@@ -37,7 +37,7 @@ Only the heuristic checks can go there; the proven ones always gate. The
   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     repository: dbhq-uk/dovetail-skill
-    ref: f0273d86acd608a1bf20b7a19a469852953f3c28
+    ref: 6330dac402f41a02570e2878d99db3dee3fe9d67
     path: .dovetail-skill
 
 - name: Scan
