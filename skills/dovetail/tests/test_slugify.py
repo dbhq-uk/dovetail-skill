@@ -7,9 +7,11 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+import slugify as slugify_module  # noqa: E402
 from slugify import anchor_ids, heading_slugs, html_ids, slugify  # noqa: E402
 
 FIXTURE = os.path.join(os.path.dirname(__file__), 'fixtures', 'github_anchors.json')
@@ -161,6 +163,15 @@ class TestAnchorIds(unittest.TestCase):
 
     def test_html_written_as_code_is_not_an_anchor(self):
         self.assertEqual(html_ids('Write `<a id="x"></a>` to add one.\n'), [])
+
+    def test_the_document_is_prepared_once(self):
+        # Preparing a document is most of the cost of reading its anchors, and
+        # headings and HTML ids read the same prepared copy.
+        md = '<a id="custom"></a>\n\n## Heading\n'
+        with mock.patch.object(slugify_module, '_prepare',
+                               wraps=slugify_module._prepare) as prepare:
+            self.assertEqual(sorted(anchor_ids(md)), ['custom', 'heading'])
+        self.assertEqual(prepare.call_count, 1)
 
 
 if __name__ == '__main__':

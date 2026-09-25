@@ -8,9 +8,11 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+import refgraph  # noqa: E402
 from refgraph import build_graph  # noqa: E402
 
 
@@ -468,6 +470,62 @@ class TestInbound(GraphCase):
         write(self.repo, 'lonely.md', 'nothing\n')
         g = self.graph(['lonely.md'])
         self.assertEqual(g['inbound']['lonely.md'], [])
+
+
+class CountingPattern:
+    """A compiled pattern that counts the lines it is run on."""
+
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self.lines: list[str] = []
+
+    def findall(self, text):
+        self.lines.append(text)
+        return self.pattern.findall(text)
+
+    def finditer(self, text):
+        self.lines.append(text)
+        return self.pattern.finditer(text)
+
+
+class TestPatternsOnlyRunWhereTheyCanMatch(GraphCase):
+    """A pattern is skipped on a line without the character it needs.
+
+    Most lines of a real repository have no slash, no `](` and no `=`, and
+    running every pattern on every line was a large share of the time the
+    graph took. Skipping them must not lose an edge: the other tests here hold
+    that.
+    """
+
+    PROSE = 'Plain prose with no link and no path in it at all.\n' * 40
+
+    def test_each_pattern_skips_lines_it_cannot_match(self):
+        write(self.repo, 'README.md', self.PROSE
+              + 'See [the guide](docs/guide.md) and <img src="docs/a.png">.\n')
+        write(self.repo, 'docs/guide.md', '# Guide\n')
+        patterns = {name: CountingPattern(getattr(refgraph, name))
+                    for name in ('_MD_LINK', '_HTML_ATTR', '_PATH_LITERAL')}
+        with mock.patch.multiple(refgraph, **patterns):
+            g = self.graph(['README.md', 'docs/guide.md', 'docs/a.png'])
+        for name, counting in patterns.items():
+            with self.subTest(pattern=name):
+                self.assertEqual(len(counting.lines), 1, counting.lines[:3])
+        self.assertEqual(sorted((e['kind'], e['dst']) for e in g['edges']),
+                         [('html', 'docs/a.png'), ('md_link', 'docs/guide.md')])
+
+    def test_a_line_with_no_bracket_is_not_read_for_link_text(self):
+        # Every markdown line is asked whether it leaves link text open. One
+        # with no `[` cannot, and is not read a character at a time to find out.
+        with mock.patch.object(refgraph, '_mask_code_spans') as mask:
+            self.assertFalse(refgraph._opens_link_text('Plain prose, `code` too.'))
+        mask.assert_not_called()
+
+    def test_wrapped_link_text_is_still_joined(self):
+        write(self.repo, 'README.md', self.PROSE + '[wrapped\ntext](docs/guide.md)\n')
+        write(self.repo, 'docs/guide.md', '# Guide\n')
+        g = self.graph(['README.md', 'docs/guide.md'])
+        self.assertEqual([(e['kind'], e['dst'], e['line']) for e in g['edges']],
+                         [('md_link', 'docs/guide.md', 42)])
 
 
 if __name__ == '__main__':

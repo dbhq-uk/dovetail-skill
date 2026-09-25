@@ -24,8 +24,8 @@ has stopped agreeing with itself - and walks you through fixing it, one finding 
 
 Findings come from two layers, and you always know which you are looking at.
 
-**Exact**, computed in Python in seconds with no model and no network: links that resolve to
-nothing, heading anchors that no longer exist, files nothing points at, duplicated and
+**Exact**, computed in Python with no model and no network: links that resolve to nothing,
+heading anchors that no longer exist, files nothing points at, duplicated and
 near-duplicated content, translations that have fallen behind, flags a doc claims that a script
 does not declare, documented calls the real signature would reject, code blocks that do not
 parse, manifests that disagree about the version, dead code, conventions the repo states but
@@ -53,10 +53,16 @@ switched off within a week - the triage costs more than the drift. So every exac
 carries a tier. A **proven** finding follows from the structure alone - a link to nothing, a
 code block that does not parse - and fails `--fail-on`. A **heuristic** finding is a likely
 problem that intent can explain - a file nothing links to may be an entry point - and it
-reports without gating unless your config opts that check in. The scan takes seconds, and the
-time grows in line with the size of the repository: about 1.3 seconds of CPU for 1,000 files,
-and about 4 for 3,000. So it costs you nothing to run on every pull request. Judged findings never gate a build, in either
-CI job.
+reports without gating unless your config opts that check in. Judged findings never gate a
+build, in either CI job.
+
+**It is cheap enough to run on every pull request.** The time grows in line with the size of
+the repository and the amount of text in it. Measured on 25 Sep 2026, a real repository of
+about 900 files, some of them markdown documents thousands of lines long, took about 14 seconds
+of CPU, and under 40 seconds of wall clock on a busy shared machine. A generated repository of
+short files took about 1.2 seconds of CPU for 1,000 files and about 3.7 for 3,000. Real content
+costs more than generated content with the same number of files. [How a scan
+works](docs/architecture.md#layer-1-step-by-step) says how both were measured.
 
 **Nothing reaches a model that Python can compute exactly.** Every rubric names the categories
 it must not report, because a reviewer restating a check Python already did is offering a guess
@@ -134,7 +140,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 21 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 22 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -216,7 +222,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 672 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 678 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

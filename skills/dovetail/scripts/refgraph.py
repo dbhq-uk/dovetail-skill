@@ -288,6 +288,8 @@ def _md_links(text: str) -> list[tuple[str, str]]:
 
 def _opens_link_text(text: str) -> bool:
     """Whether `text` leaves a `[` open, so link text may carry on past it."""
+    if '[' not in text:
+        return False
     depth = 0
     for char in _mask_code_spans(text):
         if char == '[':
@@ -320,7 +322,10 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
         consumed.add(target)
         consumed.add(target.partition('#')[0])
 
-    if 'md_link' in allowed or 'md_image' in allowed:
+    # Each pattern needs a character the line may not have. Most lines have
+    # none of them, and testing for the character first skips the regex
+    # without changing what it would have found.
+    if ('md_link' in allowed or 'md_image' in allowed) and '](' in markup:
         for bang, raw_target in _md_links(markup):
             kind = 'md_image' if bang else 'md_link'
             if kind in allowed:
@@ -335,7 +340,7 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
             found.append(('md_refdef', target))
             consume(target)
 
-    if 'html' in allowed:
+    if 'html' in allowed and '=' in markup:
         for target in _HTML_ATTR.findall(markup):
             if target not in consumed:
                 found.append(('html', target))
@@ -350,7 +355,7 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
                 found.append(('import', target))
                 consume(target)
 
-    if 'path_literal' in allowed:
+    if 'path_literal' in allowed and '/' in line:
         for target in _PATH_LITERAL.findall(line):
             if target not in consumed:
                 found.append(('path_literal', target))
