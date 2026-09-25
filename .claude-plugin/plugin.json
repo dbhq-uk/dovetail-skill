@@ -1,6 +1,6 @@
 {
   "name": "dovetail",
-  "description": "Check whether a repository agrees with itself, for Claude Code and Codex - broken links, dangling heading anchors, orphaned files, duplicate and near-duplicate content, and translations that have fallen behind. Deterministic: no model calls, no network, no dependencies, and it never modifies the repository it scans. Fast enough to run on every pull request.",
+  "description": "Check whether a repository agrees with itself, for Claude Code and Codex, then work through the findings one at a time. An exact layer finds broken links, dangling heading anchors, orphaned files, duplicate content, translations that have fallen behind and drift between docs and code, with no model, no network and no dependencies, fast enough to gate every pull request. A judgement layer sends files to model reviewers for contradictions and stale documentation. The scan never writes; the triage loop edits only what you approve.",
   "author": {
     "name": "DBHQ",
     "email": "dan@dbhq.uk"

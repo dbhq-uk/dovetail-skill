@@ -36,8 +36,8 @@ because you can tell a real finding from a wrong one.
 python3 ~/.claude/skills/dovetail/scripts/scan.py /path/to/repo --format json
 ```
 
-That is the deterministic layer on its own: seconds, no model, no network, and it never
-modifies the repository. You get JSON:
+That is the exact layer on its own: seconds, no model, no network, and the scan never
+writes to the repository. You get JSON:
 
 ```json
 {

@@ -6,21 +6,23 @@ Why dovetail is shaped the way it is. The code says what it does; this says why.
 
 A dovetail is the joint where two pieces interlock so precisely they cannot pull apart - and "does that dovetail?" is already the English idiom for "do those two things agree?" That is the whole tool in one word: it asks whether the parts of a repository still agree with each other.
 
-## Deterministic first, and only deterministic
+## Deterministic first
 
-Every check dovetail ships is deterministic. It walks the repository, builds a typed reference graph, and reports only findings that follow from the structure - a link that resolves to nothing, a heading anchor that no longer exists, a file nothing points at.
+dovetail has two layers, and the exact layer comes first. Every check in it is deterministic. It walks the repository, builds a typed reference graph, and reports only findings that follow from the structure - a link that resolves to nothing, a heading anchor that no longer exists, a file nothing points at.
 
-That constraint is doing real work. A checker that produces false positives gets switched off within a week, because the cost of triaging noise exceeds the cost of the drift it finds. Deterministic findings can be trusted enough to **fail a build on**, which is what makes the CI template in `skills/dovetail/ci/` safe to adopt.
+That constraint is doing real work. A checker that produces false positives gets switched off within a week, because the cost of triaging noise exceeds the cost of the drift it finds. Exact findings can be trusted enough to **fail a build on**, which is what makes the pull-request template in `skills/dovetail/ci/` safe to adopt.
 
 It also means the scan costs nothing and takes seconds: no model calls, no API key, no network. You can run it on every pull request without thinking about the bill.
 
-## It reports; it does not fix
+The judgement layer is the other half, and it does call models. It is kept apart so it cannot weaken the first: its findings are labelled judged wherever they appear, and they never gate a build. [The judgement layer](#the-judgement-layer) below says how it is kept honest.
 
-dovetail never modifies the repository it is scanning. The scan reads the decisions ledger and never writes it; the only file it writes anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUMMARY`.
+## The scan reports; you decide the fix
 
-This is deliberate rather than unfinished. The mechanical half of coherence - *what disagrees* - is decidable, and that is what a deterministic scan is good at. The other half - *which side is right* - usually is not. A broken link might mean the link is wrong or that the target was deleted in error, and nothing in the file tree distinguishes those. Guessing produces confident, wrong edits in exactly the documents people trust most.
+The scan never modifies the repository it is scanning. It reads the decisions ledger and never writes it; the only file it writes anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUMMARY`.
 
-So the tool draws the line where its certainty ends. It tells you the finding and the evidence lines; you decide.
+Fixes happen in the triage loop, one finding at a time, and only after you choose one. The line sits where certainty ends. The mechanical half of coherence - *what disagrees* - is decidable, and that is what a deterministic scan is good at. The other half - *which side is right* - usually is not. A broken link might mean the link is wrong or that the target was deleted in error, and nothing in the file tree distinguishes those. Guessing produces confident, wrong edits in exactly the documents people trust most.
+
+So the tool shows you the finding and the evidence lines, offers the fixes, and edits only what you approve. Before each edit it checks that nothing else has changed the tree, and it will not write at all outside a git repository, where there is no undo.
 
 ## A reference graph, not a text search
 
@@ -38,7 +40,7 @@ Rather than a local ignore list that every contributor rebuilds and CI never see
 {"id":"sha256:...","verdict":"intentional","reason":"why","at":"2026-07-28","summary":"human-readable echo"}
 ```
 
-You append to this file yourself - consistent with the tool never writing to your repository. Because it is committed, a judgement made once applies to everyone and to CI. Because the key is a fingerprint of the finding rather than a line number, it survives the file moving - but *not* the finding materially changing, which is the behaviour you want: if the thing you approved has become a different thing, it should surface again.
+The triage loop appends a line when you mark a finding intentional, and you can append one yourself. The scan only ever reads it. Because it is committed, a judgement made once applies to everyone and to CI. Because the key is a fingerprint of the finding rather than a line number, it survives the file moving - but *not* the finding materially changing, which is the behaviour you want: if the thing you approved has become a different thing, it should surface again.
 
 The `summary` field is redundant to the machine and load-bearing for the human: without it, the ledger is an unreadable list of hashes and nobody can audit their own past decisions.
 

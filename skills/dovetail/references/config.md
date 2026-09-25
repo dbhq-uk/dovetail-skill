@@ -2,7 +2,7 @@
 
 Committed, per-repository settings. Every key is optional; the file itself is optional.
 
-Humans write TOML, the machine writes JSONL. That split is not a preference - `tomllib` reads TOML and there is no standard-library TOML *writer*, so making config machine-writable would mean hand-rolling serialisation. Config is human-owned; `.dovetail/decisions.jsonl` is machine-owned.
+Humans write TOML, the machine writes JSONL. That split is not a preference - `tomllib` reads TOML and there is no standard-library TOML *writer*, so making config machine-writable would mean hand-rolling serialisation. Config is human-owned: dovetail never writes it. `.dovetail/decisions.jsonl` is machine-written: the triage loop appends to it, and a line you add by hand in the same format works too.
 
 **A config that exists but is invalid stops the run.** It is never silently ignored: a typo that quietly disabled half the checks is the worst available failure for a tool whose value is that its output can be trusted.
 

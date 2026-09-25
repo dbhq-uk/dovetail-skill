@@ -55,8 +55,8 @@ gates).
 
 Break any of these and it stops being the thing people can trust:
 
-1. **Deterministic only.** No model calls, no network, no third-party imports. A finding must follow from the structure of the repository. This is what makes it safe to fail a build on - a checker with false positives gets switched off within a week.
-2. **Never write to the scanned repository.** dovetail reports; it does not fix. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` is called only from `dovetail.py decide`, on the user's say-so during triage, and CI fails if anything on the scan path calls it.
+1. **The exact layer is deterministic.** No model calls, no network, no third-party imports. An exact finding must follow from the structure of the repository. This is what makes it safe to fail a build on - a checker with false positives gets switched off within a week. The judgement layer does call models, and is kept apart: its findings are labelled judged, and never gate a build in either CI job.
+2. **The scan never writes to the scanned repository.** Only the triage loop writes, one approved fix at a time. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` is called only from `dovetail.py decide`, on the user's say-so during triage, and CI fails if anything on the scan path calls it.
 3. **Fail loudly, never silently pass.** `--since` against an unresolvable ref exits `2`. A check that reports success because it could not run is worse than no check.
 4. **Never hand a reviewer more than it can finish.** Work is sharded into batches of 20 files. A reviewer given the whole repository and one turn budget reads a handful of files and skips the rest in silence - which is indistinguishable from thoroughness in the output. This was measured: unsharded, a 474-file repo produced 24 judged findings; sharded, 149.
 5. **Never trust a quote, but do not confuse a moved one with an invented one.** Every piece of evidence a reviewer returns is checked against the actual line in the file. A fabricated quote at a plausible line reads exactly like a true finding, which makes it the most damaging failure available. The check resolves to four states - match, moved, stale, absent - because dovetail edits files during its own triage loop: a fix the user approved can rewrite the line a still-running reviewer quoted, and only the committed blob separates that from an invention. Calling it fabrication was measured costing ten sound findings in one run.
@@ -72,17 +72,20 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 534 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 543 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```
 
-The repo carries two `.dovetail/checks/` plugins, both enforcing rules no
+The repo carries three `.dovetail/checks/` plugins, each enforcing a rule no
 general check could know:
 
 - `roster_matches_skill.py` - the reviewer table in `SKILL.md` must match
   `ROSTER` in `reviewer.py`
 - `documented_test_count.py` - every documented test count must match the suite
+- `house_style_dashes.py` - no em or en dashes in this repository's markdown.
+  It is a house rule, not a general one, because plenty of repositories use
+  those dashes on purpose
 
 The second exists because four documents here once carried four different
 counts - 243, 359, 243 and 243 - against a suite of 394. A bare number in prose

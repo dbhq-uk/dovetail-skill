@@ -3,13 +3,20 @@
 Checks whether a repository agrees with itself.
 
 `dovetail` builds an inventory and a typed reference graph of a repository, then
-reports findings that are certain: broken links, dangling heading anchors,
-orphaned files, duplicate and near-duplicate content, and translated documents
-that have fallen behind their base.
+reports where it has stopped agreeing with itself. Findings come from two layers.
 
-Everything here is deterministic. There are no model calls, no network access,
-and no third-party dependencies - only the Python 3.11+ standard library and
-`git`. It reports findings; it never modifies the repository it is scanning.
+The **exact layer** is `scan.py`, documented here. Its seventeen checks are
+certain: broken links, dangling heading anchors, orphaned files, duplicate and
+near-duplicate content, translations that have fallen behind, flag and
+signature drift, conventions and git-history signals among them. It makes no
+model calls and no network requests, and needs only the Python 3.11+ standard
+library and `git`. The scan reads the repository and never writes to it.
+
+The **judgement layer** sends files to model reviewers, for contradictions and
+documentation the code no longer matches. Then the triage loop in `SKILL.md`
+walks through the findings, and edits the repository only when you approve a
+fix. See `SECURITY.md` at the repository root for what each part runs and
+sends.
 
 ## Usage
 
@@ -39,4 +46,4 @@ The file is committed, so a decision made once applies to everyone and to CI.
 
 ## Requirements
 
-Python 3.11+ and `git`. No credentials, no packages, no network.
+Python 3.11+ and `git`. No credentials, no packages and no network for the exact layer. The judgement layer needs a model.

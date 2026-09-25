@@ -119,31 +119,26 @@ run on every pull request.
 
 ## What it finds
 
-Real output, from running the exact layer on this repository:
+One finding from running the exact layer on this repository, in the format the pull-request
+job uses:
 
 ```
-$ python3 skills/dovetail/scripts/scan.py . --format json
-
-1 finding
-
-[low / decoupled] AGENTS.md and skills/dovetail/SKILL.md changed together in
-6 of their last commits (86% coupling), but have changed apart 3 times since.
-
-  suggestion  Check whether the recent changes to one should have been
-              mirrored in the other.
-  evidence    AGENTS.md - changed with SKILL.md 6 times
-              skills/dovetail/SKILL.md - changed with AGENTS.md 6 times
-  confidence  high
+$ python3 skills/dovetail/scripts/scan.py . --format github
+::warning file=README.md,line=1,title=decoupled::README.md and skills/dovetail/scripts/refgraph.py changed together in 6 of their last commits (100%25 coupling), but have changed apart 3 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
-No linter finds that one. Both files are valid, neither has a broken link, and
-nothing about either is wrong on its own - the signal is entirely in the
-history, which is that two files behaved as a pair for six commits and then
-stopped. It is the kind of drift you only notice when the document is already
-wrong.
+`--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
+escapes `%`). `--format json`, the default, prints the same findings as a JSON object, with the
+evidence, the suggestion and a fingerprint for each.
 
-Nothing here is a judgement call: the exact layer runs in Python with no model
-and no network, so this finding is reproducible by anyone who clones the repo.
+No linter finds that one. Both files are valid, neither has a broken link, and nothing about
+either is wrong on its own - the signal is entirely in the history, which is that two files
+behaved as a pair for several commits and then stopped. It is the kind of drift you only notice
+when the document is already wrong. The counts move as the history does, so your run of this
+command will not print exactly this line.
+
+Nothing here is a judgement call: the exact layer runs in Python with no model and no network,
+so this finding is reproducible by anyone who clones the repo at the same commit.
 
 ## Usage
 
@@ -209,7 +204,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 534 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 543 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),
