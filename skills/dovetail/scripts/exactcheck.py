@@ -19,6 +19,7 @@ import ast
 import json
 import os
 import re
+import textwrap
 
 import bootstrap
 
@@ -67,9 +68,13 @@ def code_blocks(text: str) -> list[tuple[str, str, int]]:
     for m in _FENCE.finditer(text):
         body = m.group('body')
         indent = m.group('indent')
-        if indent:  # strip the common indent so the body parses on its own
+        if indent:  # strip the fence's own indent, as a list item carries it
             body = '\n'.join(line[len(indent):] if line.startswith(indent) else line
                              for line in body.split('\n'))
+        # Then the body's own common indent. A snippet quoting one method of a
+        # class is indented as it sits in the class, and parsing it as written
+        # fails with "unexpected indent" on a snippet that is fine.
+        body = textwrap.dedent(body)
         blocks.append((m.group('lang').lower(), body, _line_of(text, m.start('body'))))
     return blocks
 

@@ -6,6 +6,11 @@ evidence every later layer relies on.
 Entries that cannot be read as a file — broken symlinks, submodule gitlinks,
 directories — are skipped rather than raised, so one odd entry cannot fail a
 whole scan.
+
+A symlink to another file the scan reads is recorded in `symlinks` and left
+out of `files`. Its content is its target's, so reading it again reported
+every finding in the target twice, and the pair as an exact duplicate. It
+stays in `all_paths`, so a link to it still resolves.
 """
 
 from __future__ import annotations
@@ -28,8 +33,14 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
     paths = [p for p in all_paths if not matches_any(p, ignore)]
     times = last_commit_times(root, paths)
 
+    scanned = set(paths)
+    symlinks: dict[str, str] = {}
     files: list[dict] = []
     for path in sorted(paths):
+        target = _symlink_target(root, path)
+        if target is not None and target in scanned and target != path:
+            symlinks[path] = target
+            continue
         try:
             with open(os.path.join(root, path), 'rb') as fh:
                 content = fh.read()
@@ -50,4 +61,17 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
         'generated_at_iso': _dt.datetime.now(_dt.timezone.utc).isoformat(),
         'files': files,
         'all_paths': sorted(all_paths),
+        'symlinks': symlinks,
     }
+
+
+def _symlink_target(root: str, path: str) -> str | None:
+    """The repo-relative file a symlink points at, or None if it is not a link into the repo."""
+    full = os.path.join(root, path)
+    if not os.path.islink(full):
+        return None
+    real_root = os.path.realpath(root)
+    target = os.path.realpath(full)
+    if os.path.commonpath([real_root, target]) != real_root:
+        return None
+    return os.path.relpath(target, real_root).replace(os.sep, '/')

@@ -31,8 +31,21 @@ DEFAULTS: dict = {
     'ignore': [],
     'profile': 'default',
     'checks': {},      # check name -> bool, to disable an individual check
+    'gate': {},        # heuristic check name -> bool, to let it fail --fail-on
     'reviewers': {},   # reviewer name -> {enabled, model, effort}
 }
+
+# Checks whose findings are likely problems rather than proven ones. A link
+# that resolves to nothing is broken on every reader's screen; a file nothing
+# links to may still be an entry point, and two files that stopped changing
+# together may simply have finished. So these findings carry tier `heuristic`
+# and do not fail `--fail-on` unless `[gate]` opts the check in. A gate that
+# goes red on noise gets removed, and then it catches nothing.
+HEURISTIC_CHECKS = frozenset({
+    'orphans', 'near_duplicates', 'missing_paths', 'dead_python_code',
+    'decoupled_pairs', 'stale_todos', 'shell_scripts_exit_on_error',
+    'scripts_are_executable', 'translation_lag',
+})
 
 VALID_PROFILES = frozenset({'default', 'cheap', 'thorough'})
 
@@ -85,6 +98,20 @@ def load_config(repo_root: str) -> dict:
                 raise ConfigError(f'`checks.{name}` must be true or false')
         config['checks'] = dict(checks)
 
+    gate = raw.get('gate')
+    if gate is not None:
+        if not isinstance(gate, dict):
+            raise ConfigError('`[gate]` must be a table of check name = true/false')
+        for name, enabled in gate.items():
+            if not isinstance(enabled, bool):
+                raise ConfigError(f'`gate.{name}` must be true or false')
+            if name not in HEURISTIC_CHECKS:
+                raise ConfigError(
+                    f'`gate.{name}`: only a heuristic check can be opted into the '
+                    f"gate ({', '.join(sorted(HEURISTIC_CHECKS))}). Every other "
+                    'check is proven and always gates.')
+        config['gate'] = dict(gate)
+
     reviewers = raw.get('reviewers')
     if reviewers is not None:
         if not isinstance(reviewers, dict):
@@ -101,3 +128,8 @@ def load_config(repo_root: str) -> dict:
 def check_enabled(config: dict, check_name: str) -> bool:
     """Whether a named deterministic check should run."""
     return config.get('checks', {}).get(check_name, True)
+
+
+def gated_checks(config: dict) -> list[str]:
+    """Heuristic checks the config lets fail `--fail-on`."""
+    return sorted(name for name, on in config.get('gate', {}).items() if on)

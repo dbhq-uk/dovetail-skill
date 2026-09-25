@@ -4,8 +4,8 @@
 # dovetail-pr.yml. The two jobs exist on two cadences because they want
 # opposite things:
 #
-#   dovetail-pr.yml   deterministic only. Fast, free, reproducible, zero false
-#                     positives, and therefore safe to block a merge on.
+#   dovetail-pr.yml   deterministic only. Fast, free and reproducible, and it
+#                     blocks a merge only on proven findings.
 #   this file         deterministic + judgement. Slow, metered and
 #                     probabilistic - so it reports and NEVER fails the build.
 #                     A gate that produces false positives is one people learn

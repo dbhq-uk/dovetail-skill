@@ -13,22 +13,23 @@ from scan import exit_code, format_github  # noqa: E402
 
 
 def finding(severity='high', source='graph', category='broken_link',
-            problem='p', file='README.md', line=4):
+            problem='p', file='README.md', line=4, tier='proven', check='broken_links'):
     return {
         'id': 'sha256:x', 'source': source, 'category': category,
         'problem': problem,
         'evidence': [{'file': file, 'line': line, 'quote': 'q'}],
         'suggestion': 's', 'fix': {'kind': 'none'}, 'blast_radius': [],
         'severity': severity, 'confidence': 'high', 'ssot_direction': 'n/a',
+        'check': check, 'tier': tier,
     }
 
 
-def result(findings, suppressed=0, failed=None):
+def result(findings, suppressed=0, failed=None, gate=None):
     counts = {'high': 0, 'medium': 0, 'low': 0}
     for f in findings:
         counts[f['severity']] += 1
     return {'findings': findings, 'suppressed': suppressed,
-            'counts': counts, 'failed_checks': failed or []}
+            'counts': counts, 'failed_checks': failed or [], 'gate': gate or []}
 
 
 class TestFormatGithub(unittest.TestCase):
@@ -85,6 +86,15 @@ class TestFormatGithub(unittest.TestCase):
         self.assertIn('orphans', out)
 
 
+class TestHeuristicAnnotations(unittest.TestCase):
+    def test_a_high_heuristic_finding_is_a_warning(self):
+        orphan = finding(severity='high', category='orphan', tier='heuristic',
+                         check='orphans')
+        self.assertIn('::warning file=README.md', format_github(result([orphan])))
+        self.assertIn('::error file=README.md',
+                      format_github(result([orphan], gate=['orphans'])))
+
+
 class TestExitCode(unittest.TestCase):
     def test_none_never_fails(self):
         self.assertEqual(exit_code(result([finding(severity='high')]), 'none'), 0)
@@ -106,6 +116,28 @@ class TestExitCode(unittest.TestCase):
 
     def test_empty_result_passes(self):
         self.assertEqual(exit_code(result([]), 'low'), 0)
+
+    def test_a_heuristic_finding_does_not_fail_the_build(self):
+        orphan = finding(severity='high', category='orphan', tier='heuristic',
+                         check='orphans')
+        self.assertEqual(exit_code(result([orphan]), 'high'), 0)
+        self.assertEqual(exit_code(result([orphan]), 'low'), 0)
+
+    def test_a_heuristic_check_named_in_gate_fails_the_build(self):
+        orphan = finding(severity='high', category='orphan', tier='heuristic',
+                         check='orphans')
+        self.assertEqual(exit_code(result([orphan], gate=['orphans']), 'high'), 1)
+        self.assertEqual(exit_code(result([orphan], gate=['missing_paths']), 'high'), 0)
+
+    def test_a_plugin_finding_never_fails_the_build(self):
+        local = finding(severity='high', source='plugin:house', tier='heuristic',
+                        check='plugin:house')
+        self.assertEqual(exit_code(result([local], gate=['plugin:house']), 'high'), 0)
+
+    def test_a_finding_without_a_tier_does_not_gate(self):
+        untiered = finding(severity='high')
+        del untiered['tier']
+        self.assertEqual(exit_code(result([untiered]), 'high'), 0)
 
     def test_judgement_findings_never_fail_the_build(self):
         judged = finding(severity='high', source='reviewer:contradiction')

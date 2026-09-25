@@ -17,7 +17,7 @@ anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUM
 |---|---|---|
 | `--format json\|github` | `json` | JSON to stdout, or GitHub workflow annotations |
 | `--since REF` | off | Only report findings that touch a file changed since `REF`: an evidence file, or the target of a broken link or anchor, deleted and renamed files included |
-| `--fail-on none\|low\|medium\|high` | `none` | Exit non-zero when a finding at or above this severity exists |
+| `--fail-on none\|low\|medium\|high` | `none` | Exit non-zero when a proven finding at or above this severity exists. Heuristic findings count only for checks `[gate]` names |
 | `--ignore GLOB` | none | Exclude a glob. Repeatable, and combines with `ignore` in the config |
 
 Run it directly, or ask for it in a session:
@@ -37,13 +37,19 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 Exit `2` is deliberately loud. On a shallow clone `--since` cannot resolve its base ref, and a
 check that reports success because it could not run is worse than no check at all.
 
-Two rules govern `1`:
+Three rules govern `1`:
 
+- **Only proven findings gate by default.** A heuristic finding (`tier` is `heuristic`) counts
+  only when `[gate]` in the config names its check. See [Deterministic checks](#deterministic-checks)
+  for which checks are which.
 - **Judged findings never gate.** Only sources `graph` and `check:*` are counted, so a
   reviewer's finding cannot fail a build even at `--fail-on low`. Plugin findings
-  (`plugin:*`) are not counted either.
+  (`plugin:*`) are heuristic and are not counted either.
 - **A failed check does gate**, whenever `--fail-on` is not `none`. An incomplete result must
   not read as a clean one.
+
+In `--format github`, a high finding that gates is an error annotation. A high heuristic
+finding that does not gate is a warning.
 
 ### JSON output
 
@@ -54,6 +60,7 @@ Two rules govern `1`:
   "counts": {"high": 0, "medium": 0, "low": 0},
   "failed_checks": [],
   "profile": "default",
+  "gate": [],
   "file_count": 474,
   "edge_count": 3120
 }
@@ -66,6 +73,7 @@ Two rules govern `1`:
 | `counts` | Kept findings by severity |
 | `failed_checks` | Checks that raised, and plugins that failed, with the reason |
 | `profile` | The model profile in force |
+| `gate` | Heuristic checks the config lets fail `--fail-on` |
 | `file_count` | Files inventoried |
 | `edge_count` | References resolved between them |
 
@@ -83,9 +91,17 @@ Two rules govern `1`:
   "blast_radius": [],
   "severity": "high",               // high | medium | low
   "confidence": "high",             // high | medium | low
-  "ssot_direction": "n/a"           // a | b | uncertain | n/a
+  "ssot_direction": "n/a",          // a | b | uncertain | n/a
+  "check": "broken_links",          // the check that made it; scan findings only
+  "tier": "proven"                  // proven | heuristic; scan findings only
 }
 ```
+
+`tier` says how far a scan finding can be trusted. A **proven** finding follows from the
+structure alone: the link resolves to nothing on every reader's screen. A **heuristic** finding
+is a likely problem that intent can explain: a file nothing links to may be an entry point. Only
+proven findings fail `--fail-on`, unless `[gate]` opts a heuristic check in. Judged findings
+carry no `check` or `tier`: they come from reviewers and never gate.
 
 `severity` is how much it matters if the finding is real; `confidence` is how sure we are that
 it is. They are different axes and both are needed.
@@ -150,28 +166,36 @@ itself exits `2` on), `3` `decide ... fix` found a change it was not told about.
 
 ## Deterministic checks
 
-Names are the check function names, which is what `[checks]` in the config takes, so a
-disabled check is traceable to the code implementing it.
+Names are the check function names, which is what `[checks]` and `[gate]` in the config take,
+so a disabled or gated check is traceable to the code implementing it. Each finding carries its
+check's name in `check` and its tier in `tier`.
 
-| Name | What it finds | Source |
-|---|---|---|
-| `broken_links` | Links whose target does not exist | `graph` |
-| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there | `graph` |
-| `orphans` | Files nothing references | `graph` |
-| `exact_duplicates` | Byte-identical files | `graph` |
-| `near_duplicates` | Files that are nearly identical | `graph` |
-| `translation_lag` | Translations behind their base document | `graph` |
-| `flag_drift` | Documented flags a script does not declare | `check:flags` |
-| `unparseable_code_blocks` | ` ```python ` / ` ```json ` / ` ```toml ` blocks that do not parse | `check:codeblock` |
-| `missing_paths` | Backticked repository paths in prose that do not exist | `check:paths` |
-| `signature_drift` | Documented calls the real signature would reject | `check:signature` |
-| `version_drift` | Manifests declaring different versions | `check:version` |
-| `dead_python_code` | Public Python symbols nothing names | `check:deadcode` |
-| `shell_scripts_exit_on_error` | Executable shell scripts without `set -e` | `check:convention` |
-| `scripts_are_executable` | Shebangs without the executable bit | `check:convention` |
-| `skill_frontmatter` | `SKILL.md` missing or malformed frontmatter | `check:convention` |
-| `decoupled_pairs` | Files with a long shared history that stopped moving together | `check:cochange` |
-| `stale_todos` | TODO markers older than six months | `check:todo` |
+| Name | What it finds | Source | Tier |
+|---|---|---|---|
+| `broken_links` | Links whose target does not exist. Links from one file to absolute paths on one machine are one finding | `graph` | proven |
+| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there | `graph` | proven |
+| `orphans` | Files nothing references | `graph` | heuristic |
+| `exact_duplicates` | Byte-identical files. A symlink is not a copy of its target | `graph` | proven |
+| `near_duplicates` | Files that are nearly identical | `graph` | heuristic |
+| `translation_lag` | Translations behind their base document | `graph` | heuristic |
+| `flag_drift` | Documented flags a script does not declare | `check:flags` | proven |
+| `unparseable_code_blocks` | ` ```python ` / ` ```json ` / ` ```toml ` blocks that do not parse, after removing their common indent | `check:codeblock` | proven |
+| `missing_paths` | Backticked repository paths in prose that do not exist | `check:paths` | heuristic |
+| `signature_drift` | Documented calls the real signature would reject | `check:signature` | proven |
+| `version_drift` | Manifests declaring different versions | `check:version` | proven |
+| `dead_python_code` | Public Python symbols nothing names | `check:deadcode` | heuristic |
+| `shell_scripts_exit_on_error` | Executable shell scripts without `set -e` | `check:convention` | heuristic |
+| `scripts_are_executable` | Shebangs without the executable bit | `check:convention` | heuristic |
+| `skill_frontmatter` | `SKILL.md` missing or malformed frontmatter | `check:convention` | proven |
+| `decoupled_pairs` | Files with a long shared history that stopped moving together | `check:cochange` | heuristic |
+| `stale_todos` | TODO markers older than six months | `check:todo` | heuristic |
+
+A symlink to another file in the repository is read once, as its target. A link to the symlink
+still resolves, lands on the target's anchors, and counts as a reference to the target.
+
+Links are read the way GitHub renders them: a link inside an inline code span is an example and
+is not followed, a badge image inside a link is two links, and link text may wrap across lines
+within a paragraph.
 
 Categories the deterministic layer owns, and which reviewers must therefore never report:
 `broken_link`, `dangling_anchor`, `orphan`, `duplicate`, `near_duplicate`, `flag_drift`,
@@ -238,6 +262,9 @@ profile = "default"                          # default | cheap | thorough
 [checks]
 stale_todos = false                          # disable by check function name
 
+[gate]
+orphans = true                               # let a heuristic check fail --fail-on
+
 [reviewers.spec-flow]
 enabled = false                              # bool
 model = "opus"                               # haiku | sonnet | opus
@@ -292,5 +319,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 543 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 568 tests, no model calls, no network
 ```

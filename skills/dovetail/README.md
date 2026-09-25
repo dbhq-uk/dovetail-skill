@@ -5,10 +5,13 @@ Checks whether a repository agrees with itself.
 `dovetail` builds an inventory and a typed reference graph of a repository, then
 reports where it has stopped agreeing with itself. Findings come from two layers.
 
-The **exact layer** is `scan.py`, documented here. Its seventeen checks are
-certain: broken links, dangling heading anchors, orphaned files, duplicate and
+The **exact layer** is `scan.py`, documented here. It runs seventeen checks:
+broken links, dangling heading anchors, orphaned files, duplicate and
 near-duplicate content, translations that have fallen behind, flag and
-signature drift, conventions and git-history signals among them. It makes no
+signature drift, conventions and git-history signals among them. Each finding
+is **proven**, following from the structure alone, or **heuristic**, a likely
+problem that intent can explain. Only proven findings fail `--fail-on` unless
+the config opts a heuristic check in. It makes no
 model calls and no network requests, and needs only the Python 3.11+ standard
 library and `git`. The scan reads the repository and never writes to it.
 
@@ -32,7 +35,7 @@ Or ask in any session: *"run dovetail on this repo"*.
 |---|---|
 | `--format json\|github` | JSON to stdout, or GitHub workflow annotations. |
 | `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link. |
-| `--fail-on none\|low\|medium\|high` | Exit non-zero when a finding at or above this severity exists. |
+| `--fail-on none\|low\|medium\|high` | Exit non-zero when a proven finding at or above this severity exists. Heuristic findings count only for checks `[gate]` in the config names. |
 
 ## Suppressing a finding
 

@@ -27,7 +27,7 @@ The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill'
 ## 3. Verify
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v          # 543 tests, no network required
+python3 -m pytest skills/dovetail/tests/ -v          # 568 tests, no network required
 python3 skills/dovetail/scripts/scan.py . --fail-on high  # no high findings here, as CI requires
 claude plugin validate .                             # the plugin metadata validates
 ```
@@ -36,7 +36,7 @@ Then, in Claude Code, try *"run dovetail on this repo"*.
 
 ## Working on the checks
 
-Every check lives in `skills/dovetail/scripts/`. The bar for a new one is in [`CONTRIBUTING.md`](../CONTRIBUTING.md): **deterministic and false-positive free**, never writes to the scanned repository, and fails loudly rather than passing silently when it cannot run. [`AGENTS.md`](../AGENTS.md) states the same three constraints for an AI agent working here, and [`docs/design-notes.md`](design-notes.md) explains why the tool is shaped this way.
+Every check lives in `skills/dovetail/scripts/`. The bar for a new one is in [`CONTRIBUTING.md`](../CONTRIBUTING.md): **deterministic**, false-positive free if it gates a build (heuristic otherwise), never writes to the scanned repository, and fails loudly rather than passing silently when it cannot run. [`AGENTS.md`](../AGENTS.md) states the same three constraints for an AI agent working here, and [`docs/design-notes.md`](design-notes.md) explains why the tool is shaped this way.
 
 Because the scan is read-only and takes seconds, the fastest loop is to point it at a real repository while you work:
 

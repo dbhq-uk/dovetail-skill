@@ -31,7 +31,7 @@ import convcheck
 import exactcheck
 import graphcheck
 import plugins as plugin_runner
-from config import ConfigError, check_enabled, load_config
+from config import HEURISTIC_CHECKS, ConfigError, check_enabled, gated_checks, load_config
 from discover import discover
 from gitmeta import changed_since, is_git_repo, rev_exists
 from refgraph import build_graph, written_target
@@ -61,19 +61,30 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     failed_checks: list[str] = []
     for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
                   + convcheck.ALL_CHECKS + cochange.ALL_CHECKS):
-        if not check_enabled(config, check.__name__):
+        name = check.__name__
+        if not check_enabled(config, name):
             continue
         try:
-            findings.extend(check(inventory, graph))
+            produced = check(inventory, graph)
         except Exception:  # a broken check must not take down the run
-            failed_checks.append(check.__name__)
+            failed_checks.append(name)
+            continue
+        tier = 'heuristic' if name in HEURISTIC_CHECKS else 'proven'
+        for finding in produced:
+            finding['check'] = name
+            finding['tier'] = tier
+        findings.extend(produced)
 
     # Repo-local checks last, so a plugin can rely on everything above having
-    # run. A plugin that raises is named, not fatal.
+    # run. A plugin that raises is named, not fatal. Its findings are
+    # heuristic: nothing about a plugin says its rule is certain.
     for result in plugin_runner.run_plugins(root, inventory, graph):
         if result.error:
             failed_checks.append(f'plugin:{result.name} ({result.error})')
         else:
+            for finding in result.findings:
+                finding['check'] = f'plugin:{result.name}'
+                finding['tier'] = 'heuristic'
             findings.extend(result.findings)
 
     if since:
@@ -102,7 +113,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
 
     return {'findings': kept, 'suppressed': suppressed,
             'counts': counts, 'failed_checks': failed_checks,
-            'profile': config['profile'],
+            'profile': config['profile'], 'gate': gated_checks(config),
             'file_count': len(inventory['files']),
             'edge_count': len(graph['edges'])}
 
@@ -172,11 +183,28 @@ def _escape_property(value: str) -> str:
                  .replace(',', '%2C'))
 
 
+def gates(finding: dict, gate: list[str] | set[str] = ()) -> bool:
+    """Whether a finding can fail `--fail-on`.
+
+    Proven findings can, and heuristic ones only when `[gate]` in the config
+    names their check. Judged findings never carry a tier, so never can.
+    """
+    if not (finding['source'] == 'graph' or finding['source'].startswith('check:')):
+        return False
+    return finding.get('tier') == 'proven' or finding.get('check') in gate
+
+
 def format_github(result: dict) -> str:
-    """Render findings as GitHub workflow annotations."""
+    """Render findings as GitHub workflow annotations.
+
+    Only a finding that can fail the build is an error. A high heuristic
+    finding is a warning, because a red annotation on a green build says two
+    things at once.
+    """
     lines: list[str] = []
+    gate = set(result.get('gate') or [])
     for finding in result['findings']:
-        level = 'error' if finding['severity'] == 'high' else 'warning'
+        level = 'error' if finding['severity'] == 'high' and gates(finding, gate) else 'warning'
         spot = finding['evidence'][0] if finding['evidence'] else {'file': '', 'line': 1}
         message = _escape_data(f"{finding['problem']} {finding['suggestion']}".strip())
         lines.append(
@@ -193,11 +221,13 @@ def format_github(result: dict) -> str:
 
 
 def exit_code(result: dict, fail_on: str) -> int:
-    """1 when a deterministic finding meets the threshold, else 0.
+    """1 when a finding that gates meets the threshold, else 0.
 
-    Judgement-sourced findings can never fail a build: they are probabilistic,
-    and a merge gate that produces false positives is one people learn to
-    override.
+    Only proven findings gate, plus heuristic checks that `[gate]` in the
+    config opts in. Judgement-sourced findings can never fail a build: they
+    are probabilistic, and a merge gate that produces false positives is one
+    people learn to override. Heuristic findings are the same argument one
+    step down.
 
     A check that raised is treated as failure too, whenever `fail_on` is not
     'none': `run_scan` swallows check exceptions into `failed_checks` so one
@@ -211,10 +241,9 @@ def exit_code(result: dict, fail_on: str) -> int:
     if result['failed_checks']:
         return 1
     threshold = SEVERITY_RANK[fail_on]
+    gate = set(result.get('gate') or [])
     for finding in result['findings']:
-        if not (finding['source'] == 'graph' or finding['source'].startswith('check:')):
-            continue
-        if SEVERITY_RANK[finding['severity']] <= threshold:
+        if gates(finding, gate) and SEVERITY_RANK[finding['severity']] <= threshold:
             return 1
     return 0
 
@@ -230,13 +259,14 @@ def _summary_markdown(result: dict) -> str:
         '',
     ]
     if result['findings']:
-        lines += ['| Severity | Category | File | Problem |',
-                  '|---|---|---|---|']
+        lines += ['| Severity | Tier | Category | File | Problem |',
+                  '|---|---|---|---|---|']
         for finding in result['findings']:
             spot = finding['evidence'][0] if finding['evidence'] else {'file': '', 'line': 1}
             problem = finding['problem'].replace('|', '\\|')
             lines.append(
-                f"| {finding['severity']} | {finding['category']} "
+                f"| {finding['severity']} | {finding.get('tier', 'judged')} "
+                f"| {finding['category']} "
                 f"| `{spot['file']}:{spot['line']}` | {problem} |"
             )
     else:
@@ -252,7 +282,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--since', metavar='REF',
                         help='only report findings touching files changed since REF')
     parser.add_argument('--fail-on', choices=['none', 'low', 'medium', 'high'],
-                        default='none', help='exit non-zero at or above this severity')
+                        default='none',
+                        help='exit non-zero when a proven finding is at or above this '
+                             'severity; heuristic checks count only when [gate] names them')
     parser.add_argument('--ignore', action='append', metavar='GLOB', default=[],
                         help='glob to exclude; repeatable')
     return parser

@@ -56,15 +56,44 @@ def _target_is_directory(src: str, raw: str, known_dirs: frozenset[str]) -> bool
     return candidate in known_dirs
 
 
+# The top of a path on somebody's machine rather than in a repository:
+# `/home/<user>/...`, `/Users/<user>/...`, `~/...`. GitHub resolves a
+# leading `/` against the repository root, so these are broken for every
+# reader but the author - and a document that cites one usually cites
+# dozens.
+_LOCAL_ROOTS = frozenset({'home', 'Users', 'tmp', 'var', 'opt', 'etc', 'mnt',
+                          'usr', 'root', 'private', 'Volumes', 'srv', 'media'})
+
+
+def _is_local_path(raw: str, known_dirs: frozenset[str]) -> bool:
+    """True when a link names an absolute path on one machine, not in the repository."""
+    target = raw.partition('#')[0]
+    if target.startswith('~/'):
+        return True
+    if not target.startswith('/') or target.startswith('//'):
+        return False
+    top = target.lstrip('/').split('/', 1)[0]
+    return top in _LOCAL_ROOTS and top not in known_dirs
+
+
 def broken_links(inventory: dict, graph: dict) -> list[dict]:
-    """Links whose target does not exist in the repository."""
+    """Links whose target does not exist in the repository.
+
+    Links from one file to absolute paths on a machine are one finding with
+    a count, not one per link: that is one cause, and reporting it a hundred
+    times buries the broken links that each need their own fix.
+    """
     known_dirs = _known_directories(inventory)
 
     grouped: dict[tuple[str, str], list[dict]] = {}
+    local: dict[str, list[dict]] = {}
     for edge in graph['edges']:
         if edge['kind'] not in LINK_KINDS or edge['dst'] is not None:
             continue
         if _target_is_directory(edge['src'], edge['raw'], known_dirs):
+            continue
+        if _is_local_path(edge['raw'], known_dirs):
+            local.setdefault(edge['src'], []).append(edge)
             continue
         grouped.setdefault((edge['src'], edge['raw']), []).append(edge)
 
@@ -82,6 +111,27 @@ def broken_links(inventory: dict, graph: dict) -> list[dict]:
             suggestion=f'Update or remove the link to {raw}.',
             severity='high',
             claim=f'{src} -> {raw}',
+        ))
+    for src, edges in sorted(local.items()):
+        edges = sorted(edges, key=lambda e: (e['line'], e['raw']))
+        targets = sorted({e['raw'] for e in edges})
+        if len(targets) == 1:
+            problem = (f'{src} links to {targets[0]}, an absolute path on one '
+                       'machine. No reader but its author can open it.')
+        else:
+            problem = (f'{src} links to {len(targets)} absolute paths on one '
+                       f'machine, such as {targets[0]}. No reader but their '
+                       'author can open them.')
+        findings.append(make_finding(
+            source='graph',
+            category='broken_link',
+            problem=problem,
+            evidence=[{'file': src, 'line': e['line'], 'quote': f"link target: {e['raw']}"}
+                      for e in edges],
+            suggestion='Link to the file by its path in the repository, or to its URL, '
+                       'or drop the links.',
+            severity='high',
+            claim=f'{src} -> absolute local paths',
         ))
     return findings
 

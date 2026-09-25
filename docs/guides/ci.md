@@ -5,14 +5,24 @@ want opposite things. Copy both into `.github/workflows/` in your own repository
 
 | Template | Cadence | Layers | Fails the build |
 |---|---|---|---|
-| `dovetail-pr.yml` | every pull request | deterministic only | yes, on `high` |
+| `dovetail-pr.yml` | every pull request | deterministic only | yes, on a `high` proven finding |
 | `dovetail-scheduled.yml` | weekly | deterministic and judgement | never |
 
 ## The per-PR job
 
-Deterministic only: no model, no API key, no network, seconds to run. That is what makes it
-safe to block a merge on - a gate with false positives is one people learn to override, and
-then it catches nothing.
+Deterministic only: no model, no API key, no network, seconds to run. And it fails only on
+**proven** findings - a link to nothing, a code block that does not parse - because a gate with
+false positives is one people learn to override, and then it catches nothing. **Heuristic**
+findings, such as an orphan or a path in prose that does not exist, show as annotations and
+leave the build green. To let one of those checks fail the build too, name it in the config:
+
+```toml
+[gate]
+orphans = true
+```
+
+Only the heuristic checks can go there; the proven ones always gate. The
+[reference](../reference.md#deterministic-checks) says which check is which.
 
 ```yaml
 - uses: actions/checkout@v4
@@ -75,9 +85,10 @@ run a deeper audit on demand without editing the file.
 
 ## Why judged findings never fail a build
 
-`exit_code()` only considers findings whose `source` is `graph` or `check:*`. A judgement
-reviewer's finding cannot fail a build even if you set `--fail-on low`, and that is enforced
-in the code rather than left to the workflow author.
+`exit_code()` only considers findings whose `source` is `graph` or `check:*`, and of those only
+proven ones and the heuristic checks `[gate]` names. A judgement reviewer's finding cannot fail
+a build even if you set `--fail-on low`, and that is enforced in the code rather than left to
+the workflow author.
 
 A check that *raised* does count, though: whenever `--fail-on` is not `none`, a non-empty
 `failed_checks` exits `1`. An incomplete result must not read as a clean one.

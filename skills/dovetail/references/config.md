@@ -22,6 +22,12 @@ profile = "default"
 stale_todos = false
 decoupled_pairs = false
 
+# Let a heuristic check fail `--fail-on`. Proven checks always can; heuristic
+# ones report without gating unless named here. Naming a proven check, or a
+# name that is not a check, stops the run.
+[gate]
+orphans = true
+
 # Per-reviewer overrides. These beat the profile, because config is the
 # durable setting and a spoken profile is for one run.
 [reviewers.spec-flow]
@@ -34,27 +40,27 @@ effort = "high"
 
 ## Deterministic check names
 
-For `[checks]`. These are the function names, so a disabled check is traceable to the code that implements it.
+For `[checks]` and `[gate]`. These are the function names, so a disabled or gated check is traceable to the code that implements it. A **proven** check reports what the structure alone settles, and its findings fail `--fail-on`. A **heuristic** check reports a likely problem that intent can explain, and its findings fail `--fail-on` only when `[gate]` names it.
 
-| Name | What it finds |
-|---|---|
-| `broken_links` | links whose target does not exist |
-| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there |
-| `orphans` | files nothing references |
-| `exact_duplicates` | byte-identical files |
-| `near_duplicates` | files that are nearly identical |
-| `translation_lag` | translations behind their base document |
-| `flag_drift` | documented flags a script does not declare |
-| `unparseable_code_blocks` | ```python / ```json / ```toml blocks that do not parse |
-| `missing_paths` | backticked repo paths in prose that do not exist |
-| `signature_drift` | documented calls the real signature would reject |
-| `version_drift` | manifests declaring different versions |
-| `dead_python_code` | public Python symbols nothing names |
-| `shell_scripts_exit_on_error` | executable shell scripts without `set -e` |
-| `scripts_are_executable` | shebangs without the executable bit |
-| `skill_frontmatter` | `SKILL.md` missing or malformed frontmatter |
-| `decoupled_pairs` | files with a long shared history that stopped moving together |
-| `stale_todos` | TODO markers older than six months |
+| Name | What it finds | Tier |
+|---|---|---|
+| `broken_links` | links whose target does not exist | proven |
+| `dangling_anchors` | `#anchor` links to a heading or HTML anchor that is not there | proven |
+| `orphans` | files nothing references | heuristic |
+| `exact_duplicates` | byte-identical files | proven |
+| `near_duplicates` | files that are nearly identical | heuristic |
+| `translation_lag` | translations behind their base document | heuristic |
+| `flag_drift` | documented flags a script does not declare | proven |
+| `unparseable_code_blocks` | ```python / ```json / ```toml blocks that do not parse | proven |
+| `missing_paths` | backticked repo paths in prose that do not exist | heuristic |
+| `signature_drift` | documented calls the real signature would reject | proven |
+| `version_drift` | manifests declaring different versions | proven |
+| `dead_python_code` | public Python symbols nothing names | heuristic |
+| `shell_scripts_exit_on_error` | executable shell scripts without `set -e` | heuristic |
+| `scripts_are_executable` | shebangs without the executable bit | heuristic |
+| `skill_frontmatter` | `SKILL.md` missing or malformed frontmatter | proven |
+| `decoupled_pairs` | files with a long shared history that stopped moving together | heuristic |
+| `stale_todos` | TODO markers older than six months | heuristic |
 
 ## Reviewers
 
