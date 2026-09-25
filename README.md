@@ -129,7 +129,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 12 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 13 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -209,7 +209,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 609 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 620 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

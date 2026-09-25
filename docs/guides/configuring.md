@@ -27,6 +27,17 @@ A config that is present but unparseable raises rather than falling back to defa
 deliberate: a typo that quietly disabled half the checks is the worst available failure for a
 tool whose entire value is that its output can be trusted. You get exit `2` and a message.
 
+The same goes for a name that exists nowhere. A misspelled check, reviewer or setting would
+otherwise do nothing while you believed it had taken effect, so it stops the run too, and the
+message names the nearest valid one:
+
+```
+error: [checks]: `stale_todo` is not a check. Did you mean `stale_todos`? Valid: ...
+```
+
+A reviewer's `model` must be `haiku`, `sonnet` or `opus`, and its `effort` `low`, `medium` or
+`high`.
+
 ## Excluding files
 
 ```toml

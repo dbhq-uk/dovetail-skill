@@ -272,7 +272,9 @@ reviewer is named as failed rather than reported as clean.
 ## .dovetail/config.toml
 
 Committed, per-repository, entirely optional. A file that is present but invalid stops the run
-with exit `2` rather than falling back to defaults.
+with exit `2` rather than falling back to defaults. Invalid includes a setting, check, reviewer
+or reviewer key that does not exist, and a `model` or `effort` outside the values below. The
+message names the nearest valid name.
 
 ```toml
 ignore = ["vendor/**", "*.generated.md"]     # globs excluded from the scan, ** works
@@ -342,5 +344,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 609 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 620 tests, no model calls, no network
 ```

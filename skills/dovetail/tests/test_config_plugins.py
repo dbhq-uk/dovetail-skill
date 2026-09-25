@@ -94,6 +94,82 @@ class Config(Base):
         self.assertNotIn('vendor/stray.md', files)
 
 
+class ConfigNames(Base):
+    """A name that exists nowhere must stop the run, not silently do nothing."""
+
+    SCAN = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'scan.py')
+
+    def rejected(self, body: str) -> str:
+        write(self.repo, '.dovetail/config.toml', body)
+        with self.assertRaises(ConfigError) as caught:
+            load_config(self.repo)
+        return str(caught.exception)
+
+    def test_the_review_reproduction_exits_2_and_names_the_typo(self):
+        write(self.repo, 'README.md', '# Project\n')
+        write(self.repo, '.dovetail/config.toml',
+              '[checks]\nstale_todo = false\n\n'
+              '[reviewers.contradiction]\nmodel = "gpt-9"\neffort = "extreme"\n')
+        result = subprocess.run([sys.executable, self.SCAN, self.repo, '--format', 'json'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, result.stdout[:200])
+        self.assertIn('`stale_todo`', result.stderr)
+        self.assertIn('Did you mean `stale_todos`?', result.stderr)
+
+    def test_an_unknown_check_is_rejected_with_the_nearest_name(self):
+        message = self.rejected('[checks]\nstale_todo = false\n')
+        self.assertIn('`stale_todo` is not a check', message)
+        self.assertIn('Did you mean `stale_todos`?', message)
+
+    def test_an_unknown_reviewer_is_rejected(self):
+        message = self.rejected('[reviewers.contradictions]\nenabled = false\n')
+        self.assertIn('`contradictions` is not a reviewer', message)
+        self.assertIn('Did you mean `contradiction`?', message)
+
+    def test_an_unknown_model_is_rejected(self):
+        message = self.rejected('[reviewers.contradiction]\nmodel = "gpt-9"\n')
+        self.assertIn('reviewers.contradiction.model', message)
+        self.assertIn("'gpt-9'", message)
+
+    def test_an_unknown_effort_is_rejected(self):
+        message = self.rejected('[reviewers.staleness]\neffort = "extreme"\n')
+        self.assertIn('reviewers.staleness.effort', message)
+        self.assertIn("'extreme'", message)
+
+    def test_a_misspelled_reviewer_setting_is_rejected(self):
+        message = self.rejected('[reviewers.staleness]\nmodle = "opus"\n')
+        self.assertIn('Did you mean `model`?', message)
+
+    def test_enabled_must_be_a_boolean(self):
+        message = self.rejected('[reviewers.xref]\nenabled = "no"\n')
+        self.assertIn('reviewers.xref.enabled', message)
+
+    def test_an_unknown_top_level_setting_is_rejected(self):
+        message = self.rejected('profiles = "cheap"\n')
+        self.assertIn('Did you mean `profile`?', message)
+
+    def test_an_unknown_gate_name_is_rejected_with_the_nearest_name(self):
+        message = self.rejected('[gate]\norphan = true\n')
+        self.assertIn('Did you mean `orphans`?', message)
+
+    def test_every_valid_name_is_accepted(self):
+        from config import known_checks, known_reviewers
+        checks = ''.join(f'{name} = true\n' for name in known_checks())
+        reviewers = ''.join(f'[reviewers.{name}]\nenabled = true\nmodel = "opus"\n'
+                            f'effort = "low"\n' for name in known_reviewers())
+        write(self.repo, '.dovetail/config.toml',
+              f'profile = "cheap"\nignore = []\n[checks]\n{checks}{reviewers}')
+        self.assertEqual(load_config(self.repo)['profile'], 'cheap')
+
+    def test_the_reference_lists_every_check(self):
+        from config import known_checks
+        with open(os.path.join(os.path.dirname(__file__), '..', 'references', 'config.md'),
+                  encoding='utf-8') as fh:
+            reference = fh.read()
+        for name in known_checks():
+            self.assertIn(f'| `{name}` |', reference)
+
+
 PLUGIN_OK = '''
 def check(inventory, graph):
     return [{
