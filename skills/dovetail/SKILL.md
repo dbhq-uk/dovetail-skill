@@ -1,6 +1,6 @@
 ---
 name: dovetail
-description: Check whether a repository agrees with itself, then work through the findings one at a time. Finds broken links, dangling heading anchors, orphaned files, duplicate content, translations that have fallen behind, drift between docs and code, contradictions between documents, and conventions the repo states but does not follow. Trigger on phrases like "dovetail", "check this repo", "does this repo agree with itself", "find contradictions", "repo coherence", "docs drift", "audit this repository".
+description: Check whether a repository agrees with itself, then work through the findings one at a time. Finds broken internal links, dangling heading anchors, orphaned files, duplicate content, translations that have fallen behind, drift between docs and code, contradictions between documents, and conventions the repo states but does not follow. Not for code review or security audits, and it checks external URLs only when asked. Trigger on phrases like "dovetail", "does this repo agree with itself", "find contradictions in the docs", "repo coherence", "docs drift", "check the docs for broken links".
 ---
 
 # dovetail
@@ -11,6 +11,16 @@ Two layers produce findings. **Exact** findings are computed in Python - links, 
 
 The user must always know which they are looking at. Never blur the two.
 
+**What it does not check.** Only links inside the repository are resolved: external URLs are skipped unless the user asks for `--external-links`. Links are read from `.md` and `.markdown` files, so `.mdx` pages are not checked. Say so if the user asks for either.
+
+## Running outside Claude Code
+
+The commands below use `${CLAUDE_SKILL_DIR}`. Claude Code sets it, and `install-codex.sh` writes the real path in its place. If it is neither set nor replaced, use the directory this `SKILL.md` is in.
+
+- **No question box** (Codex, or an agent installed through skills.sh): ask in plain text instead. Print the same header, question and numbered options, one finding per message, then stop and wait for the answer.
+- **No model choice per subagent:** run each shard on the model you have, and say in the header that the reviewer tiering was not applied.
+- **No background subagents:** skip the reviewers and say the run is exact only.
+
 ## How a run is driven
 
 One script drives the whole run and keeps its state on disk, in `~/.dbhq/dovetail/`. Each verb prints only what the next step needs:
@@ -19,7 +29,7 @@ One script drives the whole run and keeps its state on disk, in `~/.dbhq/dovetai
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py <verb> --repo <repo-path>
 ```
 
-**Never read the scan JSON, the clusters or a shard file yourself.** On a real repository they run to hundreds of kilobytes and would fill the context before the first question. Everything you need arrives through the verbs.
+**Never read the scan JSON, the clusters or a shard file yourself.** Everything you need arrives through the verbs.
 
 ### 1. Scan (always)
 
@@ -27,9 +37,9 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py <verb> --repo <repo-path>
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py scan --repo <repo-path>
 ```
 
-It takes seconds: about 1.3 seconds of CPU on 1,000 files and about 4 on 3,000, so run it in the foreground. It starts a new run and prints a summary of about eight lines: counts, failed checks, suppressed findings, stale decisions, and findings by category. It also snapshots every file, for write safety. `--since REF`, `--ignore GLOB` and `--no-plugins` work as they do for `scan.py`. Pass `--no-plugins` when the user does not trust the repository: `.dovetail/checks/*.py` is code from it, and runs on every scan. Pass `--external-links` only when the user asks for external URLs to be checked: it runs lychee over the network, and exits `2` if lychee is not installed.
+Run it in the foreground; it takes seconds. It starts a new run, prints a summary of about eight lines (counts, failed checks, suppressed findings, stale decisions, findings by category) and snapshots every file for write safety. `--since REF`, `--ignore GLOB` and `--no-plugins` work as they do for `scan.py`. Pass `--no-plugins` when the user does not trust the repository: `.dovetail/checks/*.py` is code from it, and runs on every scan. Pass `--external-links` only when the user asks for external URLs to be checked: it runs lychee over the network, and exits `2` if lychee is not installed.
 
-If it exits `2`, report the error and stop. git is not installed, the repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults: a config the user wrote is one they expect to take effect.
+If it exits `2`, report the error and stop. git is not installed, the repository is not a git checkout, `.dovetail/config.toml` is invalid, or `--since` did not resolve. Do not carry on with defaults.
 
 ### 2. Start the reviewers (unless the user said "quick" or "exact only")
 
@@ -39,7 +49,7 @@ Start them **before** triage, so they land while the user works through the exac
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py prepare-review --repo <repo-path>
 ```
 
-This writes one prompt file per shard: 20 files, or 25 contradiction clusters. A reviewer handed a whole repository reads a few files and skips the rest in silence, which looks exactly like thoroughness. So never merge shards. The user's profile goes here as `--profile cheap` or `--profile thorough`.
+This writes one prompt file per shard: 20 files, or 25 contradiction clusters. Never merge shards. The user's profile goes here as `--profile cheap` or `--profile thorough`.
 
 Then hand the shards out in waves:
 
@@ -66,9 +76,15 @@ When a wave's agents have finished, import what they wrote, then hand out the ne
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py import-review --repo <repo-path>
 ```
 
-Every quote is checked against the file. A quote at its line, or moved within the file, is kept. A quote that is only in the committed file is **stale**: dovetail's own fix rewrote the line. A quote in neither, or evidence that cannot be checked, is **fabricated**. One bad finding is dropped and named; the rest of that shard is queued. A shard whose output is not a JSON array goes out once more in the next wave, with the contract restated, as it does in the scheduled job. If the second attempt fails too, the shard has **failed** and its findings are missing. Low-confidence findings from haiku or sonnet are held and come back in a later wave on opus, unless the profile is cheap.
+Every quote is checked against the file:
 
-**Report what was dropped, and say which kind.** Fabrication means that reviewer is unreliable, and is worth naming in the header. Stale means only that the tree moved. Never present a filtered list as if it were complete.
+- at its line, or moved within the file: **kept**
+- only in the committed file: **stale**, because dovetail's own fix rewrote the line
+- in neither, or evidence that cannot be checked: **fabricated**
+
+A bad finding is dropped and named; the rest of that shard is queued. A shard whose output is not a JSON array goes out once more in the next wave, with the contract restated. If that fails too, the shard has **failed** and its findings are missing. Low-confidence findings from haiku or sonnet come back in a later wave on opus, unless the profile is cheap.
+
+**Report what was dropped, and say which kind.** Name a reviewer that fabricated in the header. Never present a filtered list as if it were complete.
 
 ### 3. Header
 
@@ -82,7 +98,7 @@ dovetail · <repo> · <file_count> files, <edge_count> references
 Starting with the 9 exact findings. More will join as reviewers land.
 ```
 
-Always show the exact/judgement split and the suppressed count. Nothing is ever hidden silently. If the summary has a `stale` line, show it too: those decisions match no current finding, usually because a file moved, and the user may want to re-record them. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
+Always show the exact/judgement split and the suppressed count. If the summary has a `stale` line, show it too: those decisions match no current finding, usually because a file moved. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
 
 ## Triage
 
@@ -96,9 +112,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py next --repo <repo-path>
 
 ### One finding, one question box
 
-Ask for the decision with `AskUserQuestion`. The markdown carries the detail, because the box cannot hold it. The box carries the choice and nothing else.
-
-Never put two findings in one box, and never ask for a decision in prose when the box is available. A typed `fix` is a verb the user has to remember; an option is one they can see.
+Ask for the decision with `AskUserQuestion`. The markdown carries the detail; the box carries the choice and nothing else. Never put two findings in one box, and never ask for a decision in prose when the box is available.
 
 Every box:
 
@@ -114,9 +128,9 @@ Every box:
 
 `next` says whether a recommendation is allowed, and why. When it says `none`, mark nothing. When it says `allowed`, you may put that option **first** with `(Recommended)` on its label. At most one per box, ever.
 
-A recommendation is a claim, so it carries its grounds in the repository's own terms: which file is newer, which side the code agrees with, how many documents cite each value. "Best practice" is not grounds. For a judged finding, put the grounds in a **Why this side** block above the box.
+A recommendation carries its grounds in the repository's own terms: which file is newer, which side the code agrees with, how many documents cite each value. "Best practice" is not grounds. For a judged finding, put the grounds in a **Why this side** block above the box.
 
-Never recommend a fix that deletes anything, or between options that are not comparable: one edits docs, another edits code, a third says both are fine. That is a question about intent, and only the user holds it. An unmarked box is a normal answer. A recommendation on every finding trains the user to accept the first option without reading.
+Never recommend a fix that deletes anything, or between options that are not comparable: one edits docs, another edits code, a third says both are fine. Only the user can answer that. An unmarked box is a normal answer.
 
 ### Writing the box
 
@@ -135,7 +149,7 @@ options   config.md is stale (Recommended)
 
 Keep option descriptions to what happens to the files. The evidence is already above the box.
 
-An option that records a permanent ledger entry carries its reason. Where the reason is obvious from the repository, put it in the label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in one follow-up box. Never invent a reason: a ledger of guessed justifications is worse than one with gaps.
+An option that records a permanent ledger entry carries its reason. Where the reason is obvious from the repository, put it in the label (`Intentional - bundle copies are meant to duplicate`). Where it is not, offer plain `Mark intentional` and ask why in one follow-up box. Never invent a reason.
 
 ### Recording the decision
 
@@ -153,17 +167,17 @@ Every value is an argument, never code, so a reason may hold any quote mark. Quo
 
 ### Cascade
 
-After each fix, rescan. It is Python, so it is free:
+After each fix, rescan. It costs nothing:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py rescan --repo <repo-path>
 ```
 
-It says which queued findings the fix resolved, whether the fix resolved its own finding, and any new finding the fix introduced. Pass its line to the user. Without this the loop is whack-a-mole; with it, fixing a root cause visibly shrinks the queue.
+It says which queued findings the fix resolved, whether the fix resolved its own finding, and any new finding the fix introduced. Pass its line to the user.
 
 ### Batch-approve
 
-A finding whose `batch_eligible` is true can be fixed together with the rest of its class. The scan sets it only for an exact finding with exactly one computed fix that deletes nothing, such as a link where exactly one file in the repository has the target's name. So there is no choice to make. When `next` says a class is `batch_eligible`, run:
+A finding whose `batch_eligible` is true can be fixed together with the rest of its class. The scan sets it only for an exact finding with exactly one computed fix that deletes nothing, such as a link where exactly one file in the repository has the target's name. When `next` says a class is `batch_eligible`, run:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py next --batch --repo <repo-path>
@@ -177,9 +191,9 @@ Never batch a finding whose `batch_eligible` is false. That covers a reviewer's 
 
 **Non-negotiable. Read before the first edit.**
 
-1. If the target is not a git repository, **refuse to write at all**. There is no undo without git. `scan` refuses to start there anyway.
-2. Before each fix, run `check`. It compares a content hash of every file with the snapshot `scan` took, so it also sees a second edit to a file that was already modified.
-3. If `check` exits `1`, or `decide ... fix` prints `STOP` and exits `3`, **stop the run and report it**. Something else is writing to the tree, and continuing risks conflicting edits.
+1. If the target is not a git repository, **refuse to write at all**. `scan` refuses to start there anyway.
+2. Before each fix, run `check`. It compares a content hash of every file with the snapshot `scan` took.
+3. If `check` exits `1`, or `decide ... fix` prints `STOP` and exits `3`, **stop the run and report it**. Something else is writing to the tree.
 4. Only ever apply a fix the user approved. Never batch something ineligible. Never fix "while you are in there".
 
 ```bash
@@ -206,4 +220,4 @@ Everything degrades; nothing crashes.
 
 ## Requirements
 
-Python 3.11 or newer, and `git`. No API key, no network, no third-party packages for the deterministic layer. The judgement layer needs a model; everything else runs without one.
+Python 3.11 or newer, and `git`. No API key, no network, no third-party packages for the deterministic layer. The judgement layer needs a model; everything else runs without one. `--external-links` needs lychee and the network.

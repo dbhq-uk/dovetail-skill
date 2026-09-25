@@ -15,6 +15,10 @@ the config opts a heuristic check in. It makes no
 model calls and no network requests, and needs only the Python 3.11+ standard
 library and `git`. The scan reads the repository and never writes to it.
 
+Only links inside the repository are checked: external URLs are skipped unless
+you pass `--external-links`, which runs lychee if it is installed. Links are
+read from `.md` and `.markdown` files, so `.mdx` pages are not checked.
+
 The **judgement layer** sends files to model reviewers, for contradictions and
 documentation the code no longer matches. Then the triage loop in `SKILL.md`
 walks through the findings, and edits the repository only when you approve a
@@ -36,6 +40,9 @@ Or ask in any session: *"run dovetail on this repo"*.
 | `--format json\|github` | JSON to stdout, or GitHub workflow annotations. |
 | `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link. |
 | `--fail-on none\|low\|medium\|high` | Exit non-zero when a proven finding at or above this severity exists. Heuristic findings count only for checks `[gate]` in the config names. |
+| `--ignore <glob>` | Exclude a glob. Repeatable. |
+| `--no-plugins` | Skip `.dovetail/checks/*.py`, which is code from the scanned repository. |
+| `--external-links` | Also check external URLs with lychee, which must be on `PATH`. Uses the network, and never gates. |
 
 ## Suppressing a finding
 
