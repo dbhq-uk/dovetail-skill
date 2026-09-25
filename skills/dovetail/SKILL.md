@@ -66,7 +66,7 @@ When a wave's agents have finished, import what they wrote, then hand out the ne
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py import-review --repo <repo-path>
 ```
 
-Every quote is checked against the file. A quote at its line, or moved within the file, is kept. A quote that is only in the committed file is **stale**: dovetail's own fix rewrote the line. A quote in neither, or evidence that cannot be checked, is **fabricated**. One bad finding is dropped and named; the rest of that shard is queued. A shard whose output is not a JSON array has **failed**, and its findings are missing. Low-confidence findings from haiku or sonnet are held and come back in a later wave on opus, unless the profile is cheap.
+Every quote is checked against the file. A quote at its line, or moved within the file, is kept. A quote that is only in the committed file is **stale**: dovetail's own fix rewrote the line. A quote in neither, or evidence that cannot be checked, is **fabricated**. One bad finding is dropped and named; the rest of that shard is queued. A shard whose output is not a JSON array goes out once more in the next wave, with the contract restated, as it does in the scheduled job. If the second attempt fails too, the shard has **failed** and its findings are missing. Low-confidence findings from haiku or sonnet are held and come back in a later wave on opus, unless the profile is cheap.
 
 **Report what was dropped, and say which kind.** Fabrication means that reviewer is unreliable, and is worth naming in the header. Stale means only that the tree moved. Never present a filtered list as if it were complete.
 

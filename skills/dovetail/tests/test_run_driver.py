@@ -359,17 +359,69 @@ class TestReview(Base):
         with open(self.shard(shard_id)['result'], 'w', encoding='utf-8') as fh:
             fh.write(findings if isinstance(findings, str) else json.dumps(findings))
 
-    def test_shards_are_the_batches_ci_dispatch_makes(self):
+    def interactive_prompts(self) -> list[tuple[str, str]]:
+        """(model, prompt) per shard, without the interactive output note."""
+        pairs = []
+        for shard in self.manifest()['shards']:
+            with open(shard['prompt'], encoding='utf-8') as fh:
+                prompt = fh.read()
+            note = dovetail._OUTPUT_NOTE.format(result=shard['result'])
+            self.assertTrue(prompt.endswith(note), shard['id'])
+            pairs.append((shard['model'], prompt[:-len(note)]))
+        return sorted(pairs)
+
+    def ci_prompts(self, **kwargs) -> tuple[list[tuple[str, str]], dict]:
+        """(model, prompt) per `claude -p` call the scheduled job would make."""
+        sent: list[tuple[str, str]] = []
+
+        def fake_claude(prompt, model, repo_root, timeout=0):
+            sent.append((model, prompt))
+            return '[]'
+
+        with mock.patch.object(ci_dispatch, 'run_claude', fake_claude):
+            result = ci_dispatch.dispatch(os.path.realpath(self.repo), **kwargs)
+        return sorted(sent), result
+
+    def test_both_paths_send_the_same_prompts_to_the_same_models(self):
+        # The contract #18 asked for: one repository, both dispatch paths, and
+        # every shard identical - the same files in the same batch, the same
+        # prompt, the same model. Counting shards is not enough; a path that
+        # batched different files, or tiered a reviewer differently, would
+        # still have the right count.
         self.ok('scan')
         self.ok('prepare-review')
-        inventory = discover(self.repo)
-        graph = build_graph(self.repo, inventory)
-        for name in ('staleness', 'xref', 'contradiction'):
-            want = ci_dispatch._batches(ci_dispatch._context_for(name, inventory, graph))
-            got = [s for s in self.manifest()['shards'] if s['reviewer'] == name]
-            self.assertEqual(len(got), len(want), name)
-            self.assertEqual([s['items'] for s in got],
-                             [len(b.get('files') or b.get('clusters')) for b in want])
+        ci, result = self.ci_prompts(profile=None)
+        interactive = self.interactive_prompts()
+        self.assertGreater(len(interactive), len({m for m, _ in interactive}))
+        self.assertEqual(interactive, ci)
+        self.assertEqual(result['batches_run'], len(interactive))
+        staleness = [s for s in self.manifest()['shards'] if s['reviewer'] == 'staleness']
+        self.assertGreater(len(staleness), 1)  # the fixture is big enough to shard
+        self.assertTrue(all(s['items'] <= ci_dispatch.FILES_PER_BATCH for s in staleness))
+
+    def test_both_paths_honour_the_config_the_same_way(self):
+        write(self.repo, '.dovetail/config.toml',
+              'ignore = ["docs/page1*.md"]\n\n'
+              '[reviewers.xref]\nenabled = false\n\n'
+              '[reviewers.staleness]\nmodel = "sonnet"\neffort = "medium"\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'config')
+        self.ok('scan')
+        self.ok('prepare-review')
+        ci, _ = self.ci_prompts(profile=None)
+        self.assertEqual(self.interactive_prompts(), ci)
+        reviewers = {s['reviewer']: s['model'] for s in self.manifest()['shards']}
+        self.assertNotIn('xref', reviewers)
+        self.assertEqual(reviewers['staleness'], 'sonnet')
+        self.assertFalse(any('docs/page12.md' in prompt for _, prompt in ci))
+
+    def test_both_paths_refuse_an_unknown_reviewer(self):
+        self.ok('scan')
+        self.assertEqual(self.run_driver('prepare-review', '--reviewer', 'nope').returncode, 2)
+        # The scheduled job used to drop an unknown name and run nothing, which
+        # reads exactly like a reviewer that found nothing.
+        with self.assertRaises(ValueError):
+            ci_dispatch.dispatch(self.repo, only=['nope'])
 
     def test_a_shard_prompt_is_the_ci_prompt_plus_where_to_write(self):
         self.ok('scan')
@@ -405,13 +457,36 @@ class TestReview(Base):
         rendered = self.skip_to_judged()
         self.assertIn('· judged · opus · high confidence', rendered)
 
-    def test_output_that_is_not_an_array_fails_the_shard_by_name(self):
+    def test_output_that_is_not_an_array_goes_out_once_more(self):
+        # The scheduled job retries unparseable output once, with the contract
+        # restated. The interactive path does the same, through the next wave.
+        self.ok('scan')
+        self.ok('prepare-review', '--reviewer', 'contradiction')
+        self.ok('wave')
+        self.answer('contradiction-01', 'I found nothing worth reporting.')
+        out = self.ok('import-review')
+        self.assertIn('retry       1 shard(s)', out)
+        self.assertIn('contradiction-01', out)
+        self.assertNotIn('failed', out)
+        shard = self.shard('contradiction-01')
+        self.assertEqual((shard['status'], shard['attempt']), ('pending', 2))
+        self.assertFalse(os.path.exists(shard['result']))
+        with open(shard['prompt'], encoding='utf-8') as fh:
+            self.assertTrue(fh.read().endswith(dovetail._RETRY_NOTE))
+        self.assertIn('contradiction-01', self.ok('wave'))
+        self.answer('contradiction-01', [judged()])
+        self.assertIn('1 finding(s) queued', self.ok('import-review'))
+
+    def test_a_shard_that_fails_twice_is_named_as_failed(self):
         self.ok('scan')
         self.ok('prepare-review', '--reviewer', 'contradiction')
         self.answer('contradiction-01', 'I found nothing worth reporting.')
+        self.ok('import-review')
+        self.answer('contradiction-01', 'Still nothing.')
         out = self.ok('import-review')
         self.assertIn('failed      1 shard(s)', out)
         self.assertIn('contradiction-01', out)
+        self.assertEqual(self.shard('contradiction-01')['status'], 'failed')
 
     def test_the_same_finding_from_two_shards_is_queued_once(self):
         self.ok('scan')
@@ -449,6 +524,25 @@ class TestReview(Base):
                           if e['layer'] == 'judged')
         self.assertEqual(statuses, ['queued'])
 
+    def test_a_failed_escalation_does_not_lose_the_finding(self):
+        # The scheduled job keeps a finding whose escalation failed, at the
+        # confidence its reviewer gave. Held forever, it would never surface.
+        self.ok('scan')
+        self.ok('prepare-review', '--reviewer', 'convention')  # sonnet
+        self.answer('convention-01', [judged(confidence='low')])
+        self.ok('import-review')
+        (escalation,) = [s for s in self.manifest()['shards'] if s['kind'] == 'escalate']
+        self.assertIn(escalation['prompt'], self.ok('wave', '--size', '5'))
+        with open(escalation['prompt'], encoding='utf-8') as fh:
+            self.assertIn(ci_dispatch.escalation_prompt(judged(confidence='low'))[:80],
+                          fh.read())
+        for reply in ('not json', 'still not json'):
+            self.answer(escalation['id'], reply)
+            out = self.ok('import-review')
+        self.assertIn('released    1 held finding(s)', out)
+        (entry,) = [e for e in self.run_state()['entries'].values() if e['layer'] == 'judged']
+        self.assertEqual((entry['status'], entry['finding']['confidence']), ('queued', 'low'))
+
     def test_the_cheap_profile_never_escalates(self):
         self.ok('scan')
         self.ok('prepare-review', '--profile', 'cheap', '--reviewer', 'convention')
@@ -456,10 +550,6 @@ class TestReview(Base):
         out = self.ok('import-review')
         self.assertNotIn('held for opus', out)
         self.assertIn('1 finding(s) queued', out)
-
-    def test_an_unknown_reviewer_exits_2(self):
-        self.ok('scan')
-        self.assertEqual(self.run_driver('prepare-review', '--reviewer', 'nope').returncode, 2)
 
 
 class TestOptions(unittest.TestCase):

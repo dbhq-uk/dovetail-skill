@@ -121,7 +121,7 @@ dovetail.py <verb> [--repo PATH] ...
 | `rescan` | Scans again | What the last fix resolved, and anything it introduced |
 | `prepare-review [--profile P] [--reviewer NAME]` | Writes one prompt file per reviewer shard | One line per reviewer |
 | `wave [--size N]` | Hands out the next shards, 4 by default and 5 at most | One line per shard, with its model |
-| `import-review` | Validates the shard results that have landed, and queues them | Counts, and every dropped or failed shard by name |
+| `import-review` | Validates the shard results that have landed, and queues them | Counts, and every dropped, retried or failed shard by name |
 
 `ID` is the short id `next` prints, or the full `sha256:` id. Run state lives in
 `~/.dbhq/dovetail/runs/<repo>-<hash>/`, readable by its owner only; `DOVETAIL_HOME` moves the
@@ -133,12 +133,16 @@ which `git status --porcelain` cannot: the line reads ` M file` both times. dove
 writes, the files named in `decide ... fix --files` and the ledger, are taken into the
 snapshot as they happen.
 
-**Shards.** `prepare-review` splits each reviewer's work the way `ci_dispatch.py` does: 20
-files, or 25 contradiction clusters, per shard. A shard's prompt is the scheduled job's prompt
-for the same batch, plus the path to write the JSON array to. `import-review` validates each
-result with the lenient validator, dedupes on the finding id, drops anything the ledger already
-suppresses, and holds a low-confidence finding from haiku or sonnet for an opus shard in a later
-wave, unless the profile is `cheap`.
+**Shards.** `prepare-review` and the scheduled job take their shards from one function,
+`ci_dispatch.plan_shards`: 20 files, or 25 contradiction clusters, per shard. So a shard's
+prompt is the scheduled job's prompt for the same batch, sent to the same model, plus the path
+to write the JSON array to. A reviewer name that is unknown or switched off exits `2` on both
+paths, rather than running nothing. `import-review` validates each result with the lenient
+validator, dedupes on the finding id, drops anything the ledger already suppresses, and holds a
+low-confidence finding from haiku or sonnet for an opus shard in a later wave, unless the
+profile is `cheap`. Output that is not a JSON array sends the shard out once more with the
+contract restated, as the scheduled job retries; a second failure marks it failed. A held
+finding whose escalation fails is queued at the confidence its reviewer gave, not lost.
 
 Exit codes: `0` done, `1` `check` found a change, `2` the verb could not run (no run started, an
 unknown id, a missing `--reason` or `--files`, a path outside the repository, or anything `scan`
@@ -287,5 +291,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 531 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 534 tests, no model calls, no network
 ```

@@ -1,8 +1,9 @@
 # Finding schema
 
 The contract every judgement reviewer must satisfy. Both dispatch paths - the
-in-session subagents driven by `SKILL.md`, and the headless `ci_dispatch.py`
-shim used by the scheduled job - validate against this file. A schema change
+in-session subagents, one per shard, handed out by `dovetail.py`, and the
+headless `ci_dispatch.py` shim used by the scheduled job - validate against this
+file. A schema change
 that broke one path while the other stayed green is exactly what having one
 written contract is meant to prevent.
 
