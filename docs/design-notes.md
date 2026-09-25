@@ -10,7 +10,9 @@ A dovetail is the joint where two pieces interlock so precisely they cannot pull
 
 dovetail has two layers, and the exact layer comes first. Every check in it is deterministic. It walks the repository, builds a typed reference graph, and reports only findings that follow from the structure - a link that resolves to nothing, a heading anchor that no longer exists, a file nothing points at.
 
-That constraint is doing real work. A checker that produces false positives gets switched off within a week, because the cost of triaging noise exceeds the cost of the drift it finds. Exact findings can be trusted enough to **fail a build on**, which is what makes the pull-request template in `skills/dovetail/ci/` safe to adopt.
+That constraint is doing real work. A checker that produces false positives gets switched off within a week, because the cost of triaging noise exceeds the cost of the drift it finds.
+
+Deterministic is not the same as certain, though. A link to nothing is broken on every reader's screen. A file nothing links to may be an entry point, and two files that stopped changing together may simply be finished. Both are computed exactly and both can be wrong about intent. On real repositories the second kind went red often enough that owners switched those checks off, and a switched-off check catches nothing. So every exact finding carries a tier. **Proven** findings follow from the structure alone and can **fail a build**, which is what makes the pull-request template in `skills/dovetail/ci/` safe to adopt. **Heuristic** findings are reported but do not gate, unless the repository opts a check in with `[gate]`, because only its owners know whether an orphan there is a mistake.
 
 It also means the scan costs nothing and takes seconds: no model calls, no API key, no network. You can run it on every pull request without thinking about the bill.
 

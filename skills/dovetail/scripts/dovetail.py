@@ -284,6 +284,8 @@ def render_finding(entry: dict, index: int, total: int) -> str:
     head = f"**[{index}/{total}] {finding['category']} · {finding['severity']}**"
     if entry['layer'] == 'exact':
         head += ' · exact'
+        if finding.get('tier'):
+            head += f" · {finding['tier']}"
     else:
         head += ' · judged'
         if entry.get('model'):
@@ -366,6 +368,9 @@ def _summary_lines(root: str, result: dict) -> list[str]:
         f"({counts['high']} high · {counts['medium']} medium · {counts['low']} low)",
         f"suppressed  {result['suppressed']} by prior decisions",
     ]
+    proven = sum(1 for f in result['findings'] if f.get('tier') == 'proven')
+    if total:
+        lines.insert(2, f'tiers       {proven} proven, {total - proven} heuristic')
     failed = result['failed_checks']
     if failed:
         shown = ', '.join(name[:120] for name in failed[:5])

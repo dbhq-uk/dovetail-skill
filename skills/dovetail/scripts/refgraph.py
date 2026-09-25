@@ -41,7 +41,18 @@ TEXT_MODALITIES = {'text', 'vector_diagram'}
 # for it but is not: the character class still stops at the first space, so
 # `[x](<a b.pdf>)` silently resolved to `a` and the file read as an orphan.
 # The alternation keeps the brackets in the capture; `_unbracket` strips them.
-_MD_LINK = re.compile(r'(!?)\[[^\]]*\]\(\s*(<[^<>\n]*>|[^)\s>]+)[^)]*\)')
+#
+# The link text may hold one level of brackets, so a badge that links
+# somewhere - `[![build](badge.svg)](ci.md)` - is read as the link it is. The
+# old `[^\]]*` stopped at the image's own `]` and lost the outer target.
+_MD_LINK = re.compile(
+    r'(!?)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(\s*(<[^<>\n]*>|[^)\s>]+)[^)]*\)')
+# A run of backticks. An inline code span opens with one and closes at the
+# next run of the same length; what is inside is an example, not a link.
+_BACKTICKS = re.compile(r'`+')
+# Link text that wraps is joined with the lines that follow it, up to this many
+# lines in all, and never across a blank line.
+_MAX_WRAPPED_LINES = 4
 _MD_REFDEF = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*(<[^<>\n]*>|[^\s>]+)')
 _HTML_ATTR = re.compile(r'\b(?:src|href)\s*=\s*["\']([^"\']+)["\']')
 _IMPORT = re.compile(r"""(?:from|require\s*\(|import)\s*['"]([^'"]+)['"]""")
@@ -232,15 +243,75 @@ def _resolve_py_module(src: str, dots: str, module: str, known: set[str]) -> str
     return None
 
 
+def _mask_code_spans(text: str) -> str:
+    """`text` with every inline code span blanked out, so offsets still line up.
+
+    Done by pairing backtick runs rather than with one regex: a regex that
+    looks for "the next run of the same length" backtracks on every start
+    position, and a long line of backticks took minutes.
+    """
+    if '`' not in text:
+        return text
+    runs = [(m.start(), m.end() - m.start()) for m in _BACKTICKS.finditer(text)]
+    # later[n] holds the indexes of runs of length n, last first, so the
+    # nearest one still ahead is always at the end of the list.
+    later: dict[int, list[int]] = {}
+    for index in range(len(runs) - 1, -1, -1):
+        later.setdefault(runs[index][1], []).append(index)
+    out = list(text)
+    index = 0
+    while index < len(runs):
+        start, length = runs[index]
+        same = later[length]
+        while same and same[-1] <= index:
+            same.pop()
+        if not same:
+            index += 1  # nothing closes it: these backticks are literal
+            continue
+        close = same.pop()
+        end = runs[close][0] + length
+        out[start:end] = ' ' * (end - start)
+        index = close + 1
+    return ''.join(out)
+
+
+def _md_links(text: str) -> list[tuple[str, str]]:
+    """(bang, target) for every markdown link or image, including one inside link text."""
+    found: list[tuple[str, str]] = []
+    for match in _MD_LINK.finditer(text):
+        found.append((match.group(1), match.group(3)))
+        if '](' in match.group(2):
+            found += _md_links(match.group(2))
+    return found
+
+
+def _opens_link_text(text: str) -> bool:
+    """Whether `text` leaves a `[` open, so link text may carry on past it."""
+    depth = 0
+    for char in _mask_code_spans(text):
+        if char == '[':
+            depth += 1
+        elif char == ']' and depth:
+            depth -= 1
+    return depth > 0
+
+
 def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
     """Return (kind, raw_target) pairs found in one line.
 
     Only runs the patterns whose kind is in `allowed`, so a disallowed kind
     (e.g. a markdown link inside a Python file) can never consume a target
     and thereby suppress a kind that is allowed there.
+
+    Links and HTML attributes are matched with inline code spans blanked
+    out: `` `[text](path/to/file.md)` `` shows how to write a link, and was
+    reported as a broken one. Bare path literals still count inside code
+    spans, because a path in backticks is a real reference to that file.
     """
     found: list[tuple[str, str]] = []
     consumed: set[str] = set()
+    # Code spans are a markdown idea, so only markdown has them masked.
+    markup = _mask_code_spans(line) if 'md_link' in allowed else line
 
     def consume(target: str) -> None:
         # Record the target and its path part, so the path-literal sweep does
@@ -249,7 +320,7 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
         consumed.add(target.partition('#')[0])
 
     if 'md_link' in allowed or 'md_image' in allowed:
-        for bang, raw_target in _MD_LINK.findall(line):
+        for bang, raw_target in _md_links(markup):
             kind = 'md_image' if bang else 'md_link'
             if kind in allowed:
                 target = _unbracket(raw_target)
@@ -257,14 +328,14 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
                 consume(target)
 
     if 'md_refdef' in allowed:
-        match = _MD_REFDEF.match(line)
+        match = _MD_REFDEF.match(markup)
         if match:
             target = _unbracket(match.group(1))
             found.append(('md_refdef', target))
             consume(target)
 
     if 'html' in allowed:
-        for target in _HTML_ATTR.findall(line):
+        for target in _HTML_ATTR.findall(markup):
             if target not in consumed:
                 found.append(('html', target))
                 consume(target)
@@ -285,6 +356,67 @@ def _scan_line(line: str, allowed: frozenset) -> list[tuple[str, str]]:
                 consume(target)
 
     return found
+
+
+def _logical_lines(body: str, is_markdown: bool) -> list[tuple[int, str]]:
+    """(first line number, text) for every line outside a code fence.
+
+    In markdown, a line that leaves link text open is joined with the lines
+    after it in the same paragraph, so a link whose text wraps is still read:
+
+        See [the configuration
+        guide](docs/config.md) for details.
+
+    The joined lines are separated by newlines, so a match can be traced
+    back to the line it is on.
+    """
+    lines = body.split('\n')
+    out: list[tuple[int, str]] = []
+    fence: str | None = None
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        fence, is_fence_line = track_fence(fence, line)
+        if is_fence_line or fence is not None:
+            index += 1
+            continue
+        start = index
+        if is_markdown:
+            while (_opens_link_text('\n'.join(lines[start:index + 1]))
+                   and index + 1 < len(lines)
+                   and index + 1 - start < _MAX_WRAPPED_LINES
+                   and lines[index + 1].strip()
+                   and not track_fence(None, lines[index + 1])[1]):
+                index += 1
+        out.append((start + 1, '\n'.join(lines[start:index + 1])))
+        index += 1
+    return out
+
+
+def _scan_logical(lineno: int, text: str, allowed: frozenset) -> list[tuple[int, str, str]]:
+    """(line number, kind, raw target) for everything `_scan_line` finds in `text`.
+
+    `text` may be several joined lines. Each target is given the line of its
+    first unused occurrence, so a link on the second line of a paragraph is
+    reported there and not on the first.
+    """
+    if '\n' not in text:
+        return [(lineno, kind, raw) for kind, raw in _scan_line(text, allowed)]
+    joined = text.replace('\n', ' ')
+    starts = [0]
+    for part in text.split('\n')[:-1]:
+        starts.append(starts[-1] + len(part) + 1)
+    seen: dict[str, int] = {}
+    out = []
+    for kind, raw in _scan_line(joined, allowed):
+        at = -1
+        for _ in range(seen.get(raw, 0) + 1):
+            at = joined.find(raw, at + 1)
+        seen[raw] = seen.get(raw, 0) + 1
+        offset = max(at, 0)
+        line_index = sum(1 for begin in starts[1:] if begin <= offset)
+        out.append((lineno + line_index, kind, raw))
+    return out
 
 
 def build_graph(repo_root: str, inventory: dict) -> dict:
@@ -315,15 +447,9 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
 
         allowed = _kinds_for(path)
 
-        fence: str | None = None
-        for lineno, line in enumerate(body.split('\n'), start=1):
-            fence, is_fence_line = track_fence(fence, line)
-            if is_fence_line:
-                continue
-            if fence is not None:
-                continue
-
-            for kind, raw in _scan_line(line, allowed):
+        is_markdown = path.lower().endswith(('.md', '.markdown'))
+        for lineno, line in _logical_lines(body, is_markdown):
+            for found_at, kind, raw in _scan_logical(lineno, line, allowed):
                 if _is_external(raw):
                     continue
                 path_part, anchor = _split_anchor(raw)
@@ -341,7 +467,7 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                     if dst is None and decoded != path_part:
                         dst = _resolve(path, path_part, known, **options)
                 edges.append({
-                    'src': path, 'line': lineno, 'kind': kind,
+                    'src': path, 'line': found_at, 'kind': kind,
                     'raw': raw, 'dst': dst, 'anchor': anchor,
                 })
 
@@ -353,12 +479,22 @@ def build_graph(repo_root: str, inventory: dict) -> dict:
                                   'raw': f'{dots}{module}', 'dst': dst,
                                   'anchor': None})
 
+    # A symlink is not read (discover leaves it out of `files`), but a link to
+    # it lands on its target: the target's anchors are its anchors, and a link
+    # to the symlink keeps the target from reading as an orphan.
+    symlinks = inventory.get('symlinks', {})
+    for link, target in symlinks.items():
+        if target in headings:
+            headings[link] = headings[target]
+
     inbound: dict[str, list[str]] = {p: [] for p in known}
     for edge in edges:
         dst = edge['dst']
         if dst is None or dst == edge['src']:
             continue
-        if edge['src'] not in inbound[dst]:
-            inbound[dst].append(edge['src'])
+        for landed in (dst, symlinks.get(dst)):
+            if (landed and landed != edge['src'] and landed in inbound
+                    and edge['src'] not in inbound[landed]):
+                inbound[landed].append(edge['src'])
 
     return {'edges': edges, 'inbound': inbound, 'headings': headings}

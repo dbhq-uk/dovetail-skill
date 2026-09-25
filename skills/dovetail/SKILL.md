@@ -7,7 +7,7 @@ description: Check whether a repository agrees with itself, then work through th
 
 Checks whether a repository agrees with itself, and walks through what it finds.
 
-Two layers produce findings. **Exact** findings are computed in Python - links, anchors, orphans, duplicates, flag and signature drift, conventions, git-history signals. **Judged** findings come from reviewers - contradictions, semantic staleness, spec drift, non-Python dead code. They are probabilistic.
+Two layers produce findings. **Exact** findings are computed in Python - links, anchors, orphans, duplicates, flag and signature drift, conventions, git-history signals. They come in two tiers. **Proven** ones follow from the structure alone, such as a link to nothing. **Heuristic** ones are likely problems that intent can explain, such as a file nothing links to. `next` prints the tier. **Judged** findings come from reviewers - contradictions, semantic staleness, spec drift, non-Python dead code. They are probabilistic.
 
 The user must always know which they are looking at. Never blur the two.
 
@@ -33,7 +33,7 @@ If it exits `2`, report the error and stop. The repository is not a git checkout
 
 ### 2. Start the reviewers (unless the user said "quick" or "exact only")
 
-Start them **before** triage, so they land while the user works through the certain findings.
+Start them **before** triage, so they land while the user works through the exact findings.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/dovetail.py prepare-review --repo <repo-path>
@@ -75,11 +75,11 @@ Every quote is checked against the file. A quote at its line, or moved within th
 ```
 dovetail · <repo> · <file_count> files, <edge_count> references
 
-  ✓ exact          9 findings   (2 high · 5 med · 2 low)
+  ✓ exact          9 findings   (2 high · 5 med · 2 low) · 6 proven, 3 heuristic
   ⋯ judgement      running - 107 shards, 4 out
   - suppressed     3 by prior decisions
 
-Starting with the 9 that are certain. More will join as reviewers land.
+Starting with the 9 exact findings. More will join as reviewers land.
 ```
 
 Always show the exact/judgement split and the suppressed count. Nothing is ever hidden silently. Name any failed check or shard: `⚠ staleness-03 failed - findings incomplete`.
@@ -195,7 +195,7 @@ Everything degrades; nothing crashes.
 `references/finding-schema.md` - the contract reviewers satisfy
 `references/reviewers/*.md` - one rubric per reviewer
 `references/config.md` - `.dovetail/config.toml`
-`ci/` - workflow templates for the user's own CI: `dovetail-pr.yml` gates pull requests on exact findings, `dovetail-scheduled.yml` runs the reviewers weekly and never fails the build
+`ci/` - workflow templates for the user's own CI: `dovetail-pr.yml` gates pull requests on proven findings, `dovetail-scheduled.yml` runs the reviewers weekly and never fails the build
 
 ## Requirements
 

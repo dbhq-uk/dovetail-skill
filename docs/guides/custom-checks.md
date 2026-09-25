@@ -118,5 +118,6 @@ confidently wrong on every run.
 
 ## One current limitation
 
-`--fail-on` counts findings whose source is `graph` or `check:*`. Plugin findings appear in the
-JSON, in the annotations and in the triage queue, but they do not currently fail a build.
+`--fail-on` counts findings whose source is `graph` or `check:*`. Plugin findings carry tier
+`heuristic`, and appear in the JSON, in the annotations and in the triage queue, but they do not
+currently fail a build.

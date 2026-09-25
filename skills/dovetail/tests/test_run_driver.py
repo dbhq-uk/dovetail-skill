@@ -148,6 +148,7 @@ class TestScanAndNext(Base):
         out = self.ok('scan')
         self.assertLessEqual(len(out.splitlines()), 10, out)
         self.assertIn('2 findings', out)
+        self.assertIn('tiers       2 proven, 0 heuristic', out)
         self.assertEqual(len(self.run_state()['entries']), 2)
 
     def test_scan_writes_nothing_into_the_repository(self):
@@ -165,7 +166,7 @@ class TestScanAndNext(Base):
         self.ok('scan')
         out = self.ok('next')
         shown, agent = out.split('=== for the agent, not the user ===')
-        self.assertIn('**[1/2] broken_link · high** · exact', shown)
+        self.assertIn('**[1/2] broken_link · high** · exact · proven', shown)
         self.assertIn('**Evidence**', shown)
         self.assertNotIn('```', shown)  # fenced blocks are for diffs only
         self.assertIn('option     Skip', agent)

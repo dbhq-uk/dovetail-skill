@@ -73,18 +73,19 @@ working:
 ```
 dovetail · my-repo · 474 files, 3,120 references
 
-  ✓ exact          9 findings   (2 high · 5 med · 2 low)
+  ✓ exact          9 findings   (2 high · 5 med · 2 low) · 6 proven, 3 heuristic
   ⋯ judgement      running - contradiction, staleness, xref
   - suppressed     3 by prior decisions
 
-Starting with the 9 that are certain. More will join as reviewers land.
+Starting with the 9 exact findings. More will join as reviewers land.
 ```
 
 Three things in that header matter every time:
 
-- **exact against judgement.** Exact findings are computed in Python and are certain.
-  Judged findings come from a model and are probabilistic. You always know which you are
-  looking at, and they are never blurred together.
+- **exact against judgement.** Exact findings are computed in Python. The proven ones are
+  certain; the heuristic ones are likely problems that intent can explain, such as an orphan
+  that is really an entry point. Judged findings come from a model and are probabilistic. You
+  always know which you are looking at, and they are never blurred together.
 - **suppressed.** Findings dismissed by a prior decision. Counted, never hidden.
 - **anything that failed.** A reviewer that errored or a check that raised is named here.
   Incomplete results never present themselves as clean ones.

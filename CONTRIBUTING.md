@@ -19,13 +19,13 @@ The whole skill directory is symlinked, so edits - including to `SKILL.md` - are
 
 ## Before opening a PR
 
-- `python3 -m pytest skills/dovetail/tests/ -v` - all 543 tests pass, no network needed
+- `python3 -m pytest skills/dovetail/tests/ -v` - all 568 tests pass, no network needed
 - `python3 skills/dovetail/scripts/scan.py . --fail-on high` - this repo has no high findings, which is what CI fails on. Low findings from its own history, such as the one in the README, are expected
 - `claude plugin validate .` - the plugin validates
 
 ## The bar for a new check
 
-A check earns its place only if it is **deterministic and false-positive free**. If it needs a judgement call, it does not belong in the scan - that is the property that lets people gate a build on the output, and one noisy check costs more trust than a whole class of findings is worth.
+A check earns its place only if it is **deterministic**. If it needs a judgement call, it does not belong in the scan. A check that gates a build must also be **false-positive free** - that is the property that lets people gate a build on the output, and one noisy check costs more trust than a whole class of findings is worth. A check whose findings intent can explain, such as an orphan that is really an entry point, is **heuristic**: add it to `HEURISTIC_CHECKS` in `config.py`, and it reports without gating unless a repository opts it in.
 
 Two related rules: a check may never write to the scanned repository, and it must fail loudly rather than silently pass when it cannot run.
 

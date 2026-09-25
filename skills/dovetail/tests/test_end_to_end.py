@@ -147,10 +147,13 @@ class TestPlantedDefects(unittest.TestCase):
         self.assertEqual(self.result['failed_checks'], [])
 
     def test_every_finding_validates_against_the_contract(self):
+        # A scan finding also names the check that made it and its tier.
         required = {'id', 'source', 'category', 'problem', 'evidence', 'suggestion',
-                    'fix', 'blast_radius', 'severity', 'confidence', 'ssot_direction'}
+                    'fix', 'blast_radius', 'severity', 'confidence', 'ssot_direction',
+                    'check', 'tier'}
         for finding in self.result['findings']:
             self.assertEqual(set(finding), required, finding['category'])
+            self.assertIn(finding['tier'], {'proven', 'heuristic'})
             self.assertTrue(finding['id'].startswith('sha256:'))
             self.assertIn(finding['severity'], {'low', 'medium', 'high'})
             self.assertTrue(finding['evidence'])

@@ -40,13 +40,17 @@ was not.
 ## What makes it different
 
 **The exact layer is deterministic, and only deterministic.** No model calls, no API key, no
-network, no third-party packages. Seventeen checks, every one following from the structure of
-the repository, so there is nothing to triage and nothing to second-guess.
+network, no third-party packages. Seventeen checks, and the same repository gives the same
+findings every time, so a finding can be reproduced by anyone who clones it.
 
 **Which means you can fail a build on it.** A checker that produces false positives gets
-switched off within a week - the triage costs more than the drift. Exact findings are certain
-enough to gate a pull request, and the scan takes seconds, so it costs you nothing to run on
-every one. Judged findings never gate a build, in either CI job.
+switched off within a week - the triage costs more than the drift. So every exact finding
+carries a tier. A **proven** finding follows from the structure alone - a link to nothing, a
+code block that does not parse - and fails `--fail-on`. A **heuristic** finding is a likely
+problem that intent can explain - a file nothing links to may be an entry point - and it
+reports without gating unless your config opts that check in. The scan takes seconds, so it
+costs you nothing to run on every pull request. Judged findings never gate a build, in either
+CI job.
 
 **Nothing reaches a model that Python can compute exactly.** Every rubric names the categories
 it must not report, because a reviewer restating a check Python already did is offering a guess
@@ -124,7 +128,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=README.md,line=1,title=decoupled::README.md and skills/dovetail/scripts/refgraph.py changed together in 6 of their last commits (100%25 coupling), but have changed apart 3 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 9 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -166,7 +170,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 |---|---|
 | `--format json\|github` | JSON to stdout, or GitHub workflow annotations |
 | `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link |
-| `--fail-on none\|low\|medium\|high` | Exit non-zero when a finding at or above this severity exists |
+| `--fail-on none\|low\|medium\|high` | Exit non-zero when a proven finding at or above this severity exists |
 | `--ignore <glob>` | Exclude a glob; repeatable |
 
 The whole tutorial is [docs/getting-started.md](docs/getting-started.md).
@@ -175,7 +179,7 @@ The whole tutorial is [docs/getting-started.md](docs/getting-started.md).
 
 Two templates in [`skills/dovetail/ci/`](skills/dovetail/ci/), because the two jobs want
 opposite things. [`dovetail-pr.yml`](skills/dovetail/ci/dovetail-pr.yml) runs on every pull
-request, deterministic only, and is safe to fail a build on.
+request, deterministic only, and fails the build only on proven findings.
 [`dovetail-scheduled.yml`](skills/dovetail/ci/dovetail-scheduled.yml) runs weekly, adds the
 judgement layer, upserts a single tracking issue, and never fails the build. Both are covered
 in [gating a build](docs/guides/ci.md).
@@ -204,7 +208,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 543 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 568 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),
