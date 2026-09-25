@@ -11,6 +11,11 @@ A symlink to another file the scan reads is recorded in `symlinks` and left
 out of `files`. Its content is its target's, so reading it again reported
 every finding in the target twice, and the pair as an exact duplicate. It
 stays in `all_paths`, so a link to it still resolves.
+
+The decisions ledger is left out of `files` too, and kept in `all_paths`. It
+is dovetail's own state, and each row's summary names the file it is about.
+Read as text, that summary is a reference: an orphan the user marked
+intentional stopped being an orphan, so the decision matched nothing.
 """
 
 from __future__ import annotations
@@ -22,6 +27,10 @@ import os
 from classify import classify
 from gitmeta import last_commit_times, list_files
 from globmatch import matches_any
+from store import DECISIONS_REL
+
+# Inventory paths always use `/`, whatever the host's separator.
+LEDGER_PATH = DECISIONS_REL.replace(os.sep, '/')
 
 
 def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
@@ -37,6 +46,8 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
     symlinks: dict[str, str] = {}
     files: list[dict] = []
     for path in sorted(paths):
+        if path == LEDGER_PATH:
+            continue
         target = _symlink_target(root, path)
         if target is not None and target in scanned and target != path:
             symlinks[path] = target

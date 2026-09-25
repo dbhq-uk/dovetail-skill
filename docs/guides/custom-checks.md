@@ -12,6 +12,9 @@ model might notice on a good day.
 Drop a module in `.dovetail/checks/` exposing one function:
 
 ```python
+from store import make_finding
+
+
 def check(inventory, graph):
     """Every skill directory must carry a README."""
     findings = []
@@ -19,18 +22,24 @@ def check(inventory, graph):
               if p.endswith('/SKILL.md')}
     for directory in sorted(skills):
         if f'{directory}/README.md' not in inventory['all_paths']:
-            findings.append({
-                'id': f'local:readme:{directory}',
-                'source': 'plugin:readme',
-                'category': 'convention',
-                'problem': f'{directory} has a SKILL.md but no README.md',
-                'evidence': [{'file': f'{directory}/SKILL.md', 'line': 1,
-                              'quote': 'skill without a README'}],
-                'suggestion': f'Add {directory}/README.md',
-                'severity': 'low',
-            })
+            findings.append(make_finding(
+                source='plugin:readme',
+                category='convention',
+                problem=f'{directory} has a SKILL.md but no README.md',
+                evidence=[{'file': f'{directory}/SKILL.md', 'line': 1,
+                           'quote': 'skill without a README'}],
+                suggestion=f'Add {directory}/README.md',
+                severity='low',
+                claim='skill without a README',
+            ))
     return findings
 ```
+
+`make_finding` comes from dovetail's own `store` module, which is importable whenever a plugin
+runs. It builds the `id` the way every built-in check does: a fingerprint over the category,
+the evidence files and the `claim`. Keep line numbers out of `claim`. An `id` that holds a line
+number changes whenever someone edits above that line, and a decision recorded against it
+stops suppressing the finding.
 
 Modules whose name starts with `_` are skipped, so shared helpers can live beside your checks.
 Plugins run last, after every built-in check, so you can rely on the inventory and graph being
@@ -57,8 +66,8 @@ about existence.
 
 ## What you must return
 
-A list of dicts. These keys are required, and a missing one fails **your plugin** rather than
-the run:
+A list of dicts, built with `make_finding` or by hand. These keys are required, and a missing
+one fails **your plugin** rather than the run:
 
 `id` · `source` · `category` · `problem` · `evidence` · `suggestion` · `severity`
 

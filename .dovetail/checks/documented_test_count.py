@@ -14,6 +14,8 @@ import ast
 import os
 import re
 
+from store import make_finding
+
 # "# 394 tests", "all 394 tests pass", "394 tests, no network required"
 _CLAIM = re.compile(r'(?<![\d,])(\d{2,5})\s+tests\b')
 # Below this, a number followed by "tests" is likely prose about something else
@@ -97,15 +99,17 @@ def check(inventory, graph):
                 claimed = int(match.group(1))
                 if claimed < MIN_CLAIM or claimed == actual:
                     continue
-                findings.append({
-                    'id': f'local:testcount:{path}:{number}',
-                    'source': 'plugin:documented_test_count',
-                    'category': 'convention',
-                    'problem': (f'{path}:{number} claims {claimed} tests; the '
-                                f'suite has {actual}.'),
-                    'evidence': [{'file': path, 'line': number,
-                                  'quote': line.strip()[:200]}],
-                    'suggestion': f'Update the count to {actual}.',
-                    'severity': 'low',
-                })
+                # The id is the claim and the line's text, never its number
+                # or the suite's size: neither changes what is being claimed.
+                findings.append(make_finding(
+                    source='plugin:documented_test_count',
+                    category='convention',
+                    problem=(f'{path}:{number} claims {claimed} tests; the '
+                             f'suite has {actual}.'),
+                    evidence=[{'file': path, 'line': number,
+                               'quote': line.strip()[:200]}],
+                    suggestion=f'Update the count to {actual}.',
+                    severity='low',
+                    claim=f'{claimed}|{line.strip()}',
+                ))
     return findings

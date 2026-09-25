@@ -7,6 +7,11 @@ identity when unrelated edits move it down the file, otherwise a decision
 recorded once would stop suppressing the finding it was about. Change the
 substance and the fingerprint correctly changes with it.
 
+File paths are part of the fingerprint, so moving or renaming a file does
+change the id, and a decision about the old path stops matching. The scan
+reports those rows as `stale_decisions` rather than letting the finding come
+back in silence: a stale row is one the user can re-record.
+
 The ledger is append-only JSONL, committed to the repository: single-line git
 diffs, no reformatting churn, and two people dismissing different findings do
 not conflict.
@@ -86,6 +91,19 @@ def load_decisions(repo_root: str) -> dict[str, dict]:
             if isinstance(row, dict) and 'id' in row:
                 decisions[row['id']] = row
     return decisions
+
+
+def stale_decisions(decisions: dict[str, dict], live_ids: set[str]) -> list[dict]:
+    """Ledger rows that match no finding the scan produced.
+
+    A row recorded for a judged finding is never stale here: a scan cannot
+    reproduce a reviewer's finding, so it cannot tell a live one from a gone
+    one. `decide` marks those rows `"layer": "judged"`. A row with no layer
+    predates that field and is checked like an exact one.
+    """
+    stale = [row for fid, row in decisions.items()
+             if fid not in live_ids and row.get('layer') != 'judged']
+    return sorted(stale, key=lambda row: (str(row.get('at', '')), row['id']))
 
 
 def append_decision(repo_root: str, decision: dict) -> None:

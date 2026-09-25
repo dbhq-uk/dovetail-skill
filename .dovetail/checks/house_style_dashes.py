@@ -11,6 +11,8 @@ make it everyone else's noise. It is a house rule, so it belongs with the house.
 
 import os
 
+from store import make_finding
+
 DASHES = {'—': 'em dash', '–': 'en dash'}
 
 
@@ -26,20 +28,24 @@ def check(inventory, graph):
                 lines = fh.read().split('\n')
         except (OSError, UnicodeDecodeError):
             continue
+        seen = {}
         for number, line in enumerate(lines, start=1):
             for char, name in DASHES.items():
                 if char not in line:
                     continue
-                findings.append({
-                    'id': f'local:dash:{path}:{number}:{name}',
-                    'source': 'plugin:house_style_dashes',
-                    'category': 'convention',
-                    'problem': (f'{path}:{number} uses an {name}; the house '
-                                'style is a plain hyphen.'),
-                    'evidence': [{'file': path, 'line': number,
-                                  'quote': line.strip()[:200]}],
-                    'suggestion': f'Replace the {name} with `-`.',
-                    'severity': 'low',
-                })
+                # The id is the line's text and which copy of it this is,
+                # never its number, so an edit above it keeps a decision.
+                text = line.strip()
+                seen[text] = seen.get(text, 0) + 1
+                findings.append(make_finding(
+                    source='plugin:house_style_dashes',
+                    category='convention',
+                    problem=(f'{path}:{number} uses an {name}; the house '
+                             'style is a plain hyphen.'),
+                    evidence=[{'file': path, 'line': number, 'quote': text[:200]}],
+                    suggestion=f'Replace the {name} with `-`.',
+                    severity='low',
+                    claim=f'{name}|{seen[text]}|{text}',
+                ))
                 break
     return findings

@@ -57,6 +57,7 @@ finding that does not gate is a warning.
 {
   "findings": [],
   "suppressed": 0,
+  "stale_decisions": [],
   "counts": {"high": 0, "medium": 0, "low": 0},
   "failed_checks": [],
   "profile": "default",
@@ -70,6 +71,7 @@ finding that does not gate is a warning.
 |---|---|
 | `findings` | Sorted by severity, then category, then first evidence file |
 | `suppressed` | How many the decisions ledger removed. Counted, never hidden |
+| `stale_decisions` | Ledger rows that match no finding, usually because a file moved. Each is the row as written |
 | `counts` | Kept findings by severity |
 | `failed_checks` | Checks that raised, and plugins that failed, with the reason |
 | `profile` | The model profile in force |
@@ -300,13 +302,17 @@ reads it.
 
 Later lines override earlier ones for the same `id`. A malformed line is skipped rather than
 fatal. `id` is a fingerprint over category, files and a normalised claim - **not** line
-numbers - so a decision survives the finding moving but not the finding changing.
+numbers - so a decision survives edits above the finding, but not the finding changing and not
+its file moving. A row that matches no current finding is listed in `stale_decisions`. Triage
+also writes `layer` (`exact` or `judged`); a `judged` row is never reported stale, because a
+scan cannot re-derive a reviewer's finding.
 
 ## .dovetail/checks/*.py
 
 Repo-local checks. A module exposing `check(inventory, graph)` and returning a list of
 findings with at least `id`, `source`, `category`, `problem`, `evidence`, `suggestion` and
-`severity`. `source` is rewritten to `plugin:<module>`. Names beginning with `_` are skipped.
+`severity`. `from store import make_finding` builds one with the same line-free `id` a built-in
+finding has. `source` is rewritten to `plugin:<module>`. Names beginning with `_` are skipped.
 A plugin that raises is named in `failed_checks` and skipped.
 
 See [writing a repo-local check](guides/custom-checks.md).
@@ -334,5 +340,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 586 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 600 tests, no model calls, no network
 ```

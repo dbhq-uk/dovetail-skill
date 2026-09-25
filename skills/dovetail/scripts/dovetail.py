@@ -376,6 +376,15 @@ def _summary_lines(root: str, result: dict) -> list[str]:
         f"({counts['high']} high · {counts['medium']} medium · {counts['low']} low)",
         f"suppressed  {result['suppressed']} by prior decisions",
     ]
+    stale = result.get('stale_decisions') or []
+    if stale:
+        lines.append(f'stale       {len(stale)} decision(s) match no current finding; '
+                     'a moved file changes the id, so re-record any that still apply')
+        for row in stale[:5]:
+            summary = str(row.get('summary') or '(no summary)').split('\n')[0][:100]
+            lines.append(f"            {row['id'][:15]}  {summary}")
+        if len(stale) > 5:
+            lines.append(f'            and {len(stale) - 5} more in the scan JSON')
     proven = sum(1 for f in result['findings'] if f.get('tier') == 'proven')
     if total:
         lines.insert(2, f'tiers       {proven} proven, {total - proven} heuristic')
@@ -526,9 +535,12 @@ def cmd_decide(args: argparse.Namespace) -> int:
         for entry in entries:
             finding = entry['finding']
             summary = (args.summary or finding['problem']).strip().split('\n')[0][:200]
+            # `layer` tells the scan whether it can check the row later: it
+            # re-derives exact findings, never a reviewer's.
             append_decision(root, {
                 'id': finding['id'], 'verdict': verdict, 'reason': reason,
                 'at': datetime.date.today().isoformat(), 'summary': summary,
+                'layer': entry['layer'],
             })
         snapshot = _load_snapshot(root)
         _accept(root, snapshot, [_relative(root, DECISIONS_REL)])

@@ -42,7 +42,7 @@ Rather than a local ignore list that every contributor rebuilds and CI never see
 {"id":"sha256:...","verdict":"intentional","reason":"why","at":"2026-07-28","summary":"human-readable echo"}
 ```
 
-The triage loop appends a line when you mark a finding intentional, and you can append one yourself. The scan only ever reads it. Because it is committed, a judgement made once applies to everyone and to CI. Because the key is a fingerprint of the finding rather than a line number, it survives the file moving - but *not* the finding materially changing, which is the behaviour you want: if the thing you approved has become a different thing, it should surface again.
+The triage loop appends a line when you mark a finding intentional, and you can append one yourself. The scan only ever reads it. Because it is committed, a judgement made once applies to everyone and to CI. Because the key is a fingerprint of the finding rather than a line number, it survives edits that push the finding down the file - but *not* the finding materially changing, which is the behaviour you want: if the thing you approved has become a different thing, it should surface again. The file's path is part of the fingerprint, so a move or a rename does change the key. The scan cannot follow a decision to a new path without guessing, so it reports the old row under `stale_decisions` instead, and the user re-records it. A decision that stops matching is counted, never silently ignored.
 
 The `summary` field is redundant to the machine and load-bearing for the human: without it, the ledger is an unreadable list of hashes and nobody can audit their own past decisions.
 
