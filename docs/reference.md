@@ -167,8 +167,15 @@ Every reviewer's output is validated before it reaches the queue:
 - a contradiction must carry evidence from both sides
 - **every quote must appear at the line it cites**
 
-An unsound finding is dropped and named; the reviewer's other findings survive. A reviewer
-whose whole output fails validation is reported as failed, and a partial result is not used.
+A quote found elsewhere in the same file has its line corrected and is kept. A quote that is
+in the committed file but not the working one was edited during the run, and that finding is
+dropped as stale. Anything else is dropped as fabricated, and that includes evidence that
+cannot be checked: an empty quote, a missing or unreadable file, or a path outside the
+repository.
+
+An unsound finding is dropped and named, with the reason; the reviewer's other findings
+survive. Only output that is not a JSON array at all fails the whole reviewer, and that
+reviewer is named as failed rather than reported as clean.
 
 ## .dovetail/config.toml
 
@@ -235,5 +242,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 408 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 446 tests, no model calls, no network
 ```

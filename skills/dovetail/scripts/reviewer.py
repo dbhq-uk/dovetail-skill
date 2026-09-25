@@ -125,31 +125,102 @@ MATCH = 'match'          # quote is at the cited line
 MOVED = 'moved'          # quote is in the file, at a different line
 STALE = 'stale'          # quote was in the committed file, not in the working one
 ABSENT = 'absent'        # quote is in neither - fabricated
-UNREADABLE = 'unreadable'
+MISSING = 'missing'      # the cited file is gone, and HEAD cannot vouch for it
+UNREADABLE = 'unreadable'  # the cited file exists but is not readable text
+OUTSIDE = 'outside'      # the cited path resolves outside the repository
+EMPTY = 'empty'          # there is no quote to check
+
+# A reviewer quoting a sentence of hard-wrapped prose sometimes quotes past the
+# end of the cited line. The rest is checked against the lines that follow, up
+# to this many and never across a blank line.
+WRAP_WINDOW = 5
 
 
 def _norm(text: str) -> str:
     return re.sub(r'\s+', ' ', str(text)).strip()
 
 
-def _quote_line(lines: list[str], quote: str) -> int | None:
-    """1-indexed line holding `quote`, or None.
+def _trimmed_from(actual: str, quote: str) -> bool:
+    """Whether `quote` is the line `actual` plus nothing but punctuation.
 
-    Substring either way, as at the cited line - but a blank line must not
-    match every quote, which `actual in quote` would do across a whole file.
+    The reverse match. Reviewers sometimes carry a bullet, a closing full stop
+    or a pair of quote marks the line does not have, and that is what this
+    forgives. It used to be plain `actual in quote`, which forgave far more: a
+    blank line is inside every quote, and a line reading `---` is inside any
+    quote holding three hyphens, so a short line vouched for a long invented
+    sentence. So the line must cover the whole quote except for characters
+    that are neither letters nor digits - a reviewer can add a full stop, but
+    never a word.
     """
-    for index, line in enumerate(lines):
-        actual = _norm(line)
-        if quote in actual or (actual and actual in quote):
+    start = quote.find(actual)
+    if start == -1:
+        return False
+    extra = quote[:start] + quote[start + len(actual):]
+    return not any(ch.isalnum() for ch in extra)
+
+
+def _found_at(lines: list[str], index: int, quote: str) -> bool:
+    """Whether `quote` is really at line `index` (0-indexed) of `lines`.
+
+    Three ways to match, each of which proves the text is in the file:
+
+    - the quote is a fragment of the line, which is the common case
+    - the line is the whole quote bar some punctuation at the ends
+    - the quote starts on the line and runs on into the lines that follow
+    """
+    if not 0 <= index < len(lines):
+        return False
+    actual = _norm(lines[index])
+    if not actual:
+        return False
+    if quote in actual or _trimmed_from(actual, quote):
+        return True
+    joined = actual
+    for following in lines[index + 1:index + 1 + WRAP_WINDOW]:
+        following = _norm(following)
+        if not following:
+            break
+        joined = f'{joined} {following}'
+        # The quote has to begin on the cited line. One that sits wholly on a
+        # later line is a moved quote, and is reported as one.
+        start = joined.find(quote)
+        if start != -1 and start < len(actual):
+            return True
+    return False
+
+
+def _quote_line(lines: list[str], quote: str) -> int | None:
+    """1-indexed line holding `quote`, or None."""
+    for index in range(len(lines)):
+        if _found_at(lines, index, quote):
             return index + 1
     return None
 
 
+def _inside(repo_root: str, rel: str) -> bool:
+    """Whether `rel` resolves to a path inside the repository.
+
+    Resolved through symlinks, so a link inside the repository that points
+    out of it does not smuggle an outside file in as evidence.
+    """
+    try:
+        root = os.path.realpath(repo_root)
+        target = os.path.realpath(os.path.join(root, rel))
+        return os.path.commonpath([root, target]) == root
+    except ValueError:  # a NUL byte, or a different drive on Windows
+        return False
+
+
 def _committed_lines(repo_root: str, path: str) -> list[str] | None:
-    """The file as of HEAD, or None if git cannot say."""
+    """The file as of HEAD, or None if git cannot say.
+
+    `HEAD:./<path>` rather than `HEAD:<path>`: the second is read from the
+    top of the repository, so it misses every file when `repo_root` is a
+    subdirectory of it.
+    """
     try:
         result = subprocess.run(
-            ['git', '-C', repo_root, 'show', f'HEAD:{path}'],
+            ['git', '-C', repo_root, 'show', f'HEAD:./{path}'],
             capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -181,24 +252,36 @@ def quote_verdict(repo_root: str, item: dict) -> tuple[str, int | None]:
     itself. Reading the committed blob separates the cases exactly, with no
     heuristic about timestamps.
 
-    Where git cannot answer, the strict reading stands: unproven is fabricated.
+    Everything else that cannot be proven is a failure, never a pass: an empty
+    quote proves nothing, a path outside the repository is not evidence about
+    it, and a file that does not exist or cannot be read cannot vouch for a
+    quote. Where git cannot answer, the strict reading stands: unproven is
+    fabricated.
     """
+    raw_quote = item.get('quote')
+    quote = _norm(raw_quote) if isinstance(raw_quote, str) else ''
+    if not quote:
+        return EMPTY, None
+
+    if not _inside(repo_root, item['file']):
+        return OUTSIDE, None
+
     path = os.path.join(repo_root, item['file'])
     try:
         with open(path, encoding='utf-8') as fh:
             lines = fh.read().split('\n')
+    except FileNotFoundError:
+        # Deleted by an approved fix mid-run is the one innocent way a cited
+        # file can vanish, and the committed blob tells it apart exactly.
+        committed = _committed_lines(repo_root, item['file'])
+        if committed is not None and _quote_line(committed, quote) is not None:
+            return STALE, None
+        return MISSING, None
     except (OSError, UnicodeDecodeError):
-        return UNREADABLE, None  # unreadable here is not proof of fabrication
+        return UNREADABLE, None
 
-    quote = _norm(item.get('quote', ''))
-    if not quote:
+    if _found_at(lines, item['line'] - 1, quote):
         return MATCH, None
-
-    index = item['line'] - 1
-    if 0 <= index < len(lines):
-        actual = _norm(lines[index])
-        if quote in actual or (actual and actual in quote):
-            return MATCH, None
 
     moved_to = _quote_line(lines, quote)
     if moved_to is not None:
@@ -209,6 +292,17 @@ def quote_verdict(repo_root: str, item: dict) -> tuple[str, int | None]:
         return STALE, None
 
     return ABSENT, None
+
+
+# Evidence that cannot be checked is rejected as fabricated rather than let
+# through. Each of these once returned a pass, which meant a reviewer could get
+# an invented finding past the check by citing something it could not read.
+_UNPROVEN = {
+    EMPTY: 'has no quote, so nothing could be checked',
+    OUTSIDE: 'is outside the repository',
+    MISSING: 'does not exist',
+    UNREADABLE: 'cannot be read as text, so the quote could not be checked',
+}
 
 
 def validate_findings(raw: object, reviewer: str, repo_root: str,
@@ -296,6 +390,8 @@ def _validate_one(finding: object, where: str, reviewer: str,
                 raise ValidationError(f'{where}: evidence item needs file and line')
             if not isinstance(item['line'], int):
                 raise ValidationError(f'{where}: evidence line must be an integer')
+            if not isinstance(item['file'], str) or not item['file']:
+                raise ValidationError(f'{where}: evidence file must be a path')
             verdict, moved_to = quote_verdict(repo_root, item)
             if verdict == MOVED:
                 # The quote is real and the line number drifted under an edit
@@ -312,6 +408,10 @@ def _validate_one(finding: object, where: str, reviewer: str,
                 raise ValidationError(
                     f'{where}: quote does not appear at {item["file"]}:'
                     f'{item["line"]} - fabricated evidence')
+            elif verdict in _UNPROVEN:
+                raise ValidationError(
+                    f'{where}: {item["file"]}:{item["line"]} '
+                    f'{_UNPROVEN[verdict]} - fabricated evidence')
 
         if category == 'contradiction' and len(evidence) < 2:
             raise ValidationError(

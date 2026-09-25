@@ -71,11 +71,15 @@ Every quote is checked against the actual line, and each piece of evidence lands
 | match | quote is at the cited line | kept |
 | moved | quote is elsewhere in the file | kept, line corrected silently |
 | stale | quote is in the committed file but not the working one | that finding dropped |
-| absent | quote is in neither | that finding dropped as **fabricated** |
+| absent | quote is in neither, or cannot be checked | that finding dropped as **fabricated** |
+
+"Cannot be checked" is never a pass: an empty quote, a file that is missing or unreadable, and a path outside the repository all count as absent. A quote may run on from the cited line into the next lines of the same paragraph, and may carry punctuation the line lacks, but never a word the file does not hold.
 
 `stale` exists because dovetail edits files during its own triage loop. A fix the user approved can rewrite the very line a still-running reviewer quoted, and calling that fabrication throws away sound work - it was observed costing ten good findings in one run. Comparing against the committed blob separates a concurrent edit from an invention exactly, with no guessing from timestamps.
 
 **Report what was dropped, and say which kind.** `rejected` is not noise to swallow: fabrication means that reviewer is unreliable and is worth naming in the header, while stale means only that the tree moved and the finding can be re-checked by re-running it. Never present a filtered list as if it were complete.
+
+The other findings from that reviewer survive and go into the queue. The command itself fails only when the output is not a JSON array at all. Then nothing can be salvaged: that reviewer **failed**, and the header names it.
 
 Escalate any finding with `confidence: low` from a haiku or sonnet reviewer to opus before queueing it, unless the profile is `cheap`.
 
