@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 
+import textcache
 from store import make_finding
 
 # How much history to read. Enough to establish a pattern, bounded so a huge
@@ -175,11 +176,10 @@ def stale_todos(inventory: dict, graph: dict) -> list[dict]:
     for entry in inventory['files']:
         if entry['modality'] != 'text':
             continue
-        try:
-            with open(os.path.join(repo_root, entry['path']), encoding='utf-8') as fh:
-                lines = fh.read().split('\n')
-        except (OSError, UnicodeDecodeError):
+        text = textcache.read(inventory, entry['path'])
+        if text is None:
             continue
+        lines = text.split('\n')
         hits = [(i + 1, line.strip())
                 for i, line in enumerate(lines) if TODO_MARKER.search(line)]
         if hits:

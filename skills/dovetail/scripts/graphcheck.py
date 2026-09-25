@@ -11,7 +11,7 @@ near duplicates, and translation lag.
 from __future__ import annotations
 
 import difflib
-import os
+import math
 import posixpath
 import re
 from datetime import datetime
@@ -19,6 +19,7 @@ from urllib.parse import unquote
 
 import fixes
 from dynref import dynamically_referenced
+import textcache
 from store import make_finding
 
 # Kinds strong enough to call a broken link. A `path_literal` is a plausible
@@ -319,16 +320,12 @@ def _mentioned_basenames(inventory: dict) -> frozenset[str]:
     # One tokenising pass per file, then set intersection - not a regex per
     # candidate per file. The naive form is O(files x candidates) over full file
     # contents, which took a 448-file repository from 4.8s to 55s.
-    root = inventory['repo_root']
     mentioned: set[str] = set()
     for entry in inventory['files']:
         if entry['modality'] != 'text':
             continue
-        try:
-            with open(os.path.join(root, entry['path']), encoding='utf-8',
-                      errors='replace') as fh:
-                text = fh.read()
-        except OSError:
+        text = textcache.read(inventory, entry['path'], strict=False)
+        if text is None:
             continue
         own = posixpath.basename(entry['path'])
         tokens = set(_FILENAME_TOKEN.findall(text))
@@ -450,9 +447,47 @@ def exact_duplicates(inventory: dict, graph: dict) -> list[dict]:
     return findings
 
 
+def candidate_pairs(sets: dict[str, frozenset[int]], floor: float) -> set[tuple[str, str]]:
+    """Every pair (left < right) whose Jaccard similarity can reach `floor`.
+
+    Prefix filtering, which finds them without looking at every pair. Put
+    each set in one global order, rarest element first. If two sets x and y
+    have Jaccard >= t, they share at least t * |x| elements. So the first
+    |x| - ceil(t * |x|) + 1 elements of x hold at least one shared element,
+    and the rarest shared element sits in the prefix of both. Two sets whose
+    prefixes share nothing cannot reach the floor.
+
+    The result is exact, not an estimate: every pair at or above the floor is
+    in it, whatever the order of ties. Pairs below the floor can be in it
+    too, and the caller still checks each one. Rare elements make short
+    posting lists, so the work follows the number of similar pairs rather
+    than the square of the number of files.
+    """
+    frequency: dict[int, int] = {}
+    for members in sets.values():
+        for element in members:
+            frequency[element] = frequency.get(element, 0) + 1
+
+    index: dict[int, list[str]] = {}
+    pairs: set[tuple[str, str]] = set()
+    for path in sorted(sets):
+        ordered = sorted(sets[path], key=lambda element: (frequency[element], element))
+        # The small margin keeps float error from rounding 0.3 * 10 up to 4,
+        # which would shorten the prefix and could drop a real pair.
+        shared = max(1, math.ceil(floor * len(ordered) - 1e-9))
+        # An element no other set holds can pair this set with nothing.
+        prefix = [element for element in ordered[:len(ordered) - shared + 1]
+                  if frequency[element] > 1]
+        for element in prefix:
+            for other in index.get(element, ()):
+                pairs.add((other, path))
+        for element in prefix:
+            index.setdefault(element, []).append(path)
+    return pairs
+
+
 def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> list[dict]:
     """Text files that are nearly, but not exactly, identical."""
-    root = inventory['repo_root']
     candidates = [
         e for e in inventory['files']
         if e['modality'] == 'text' and e['size_bytes'] >= NEAR_DUPLICATE_MIN_BYTES
@@ -460,12 +495,9 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
 
     bodies: dict[str, str] = {}
     for entry in candidates:
-        try:
-            with open(os.path.join(root, entry['path']), encoding='utf-8',
-                      errors='replace') as fh:
-                bodies[entry['path']] = ' '.join(fh.read().split()).lower()
-        except OSError:
-            continue
+        text = textcache.read(inventory, entry['path'], strict=False)
+        if text is not None:
+            bodies[entry['path']] = ' '.join(text.split()).lower()
 
     seen_hashes = {e['path']: e['sha256'] for e in candidates}
 
@@ -499,14 +531,20 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
     # discards genuine near-duplicates.
     min_length_ratio = threshold / (2 - threshold)
 
+    # Only pairs that can pass the Jaccard floor below are compared at all.
+    # Looping over every pair made this check quadratic in the size of the
+    # repository, however cheap each comparison was.
+    rights: dict[str, list[str]] = {}
+    for left, right in candidate_pairs(shingles, SHINGLE_JACCARD_FLOOR):
+        rights.setdefault(left, []).append(right)
+
     findings = []
-    paths = sorted(bodies)
     matcher = difflib.SequenceMatcher(None)
-    for i, left in enumerate(paths):
+    for left in sorted(rights):
         # set_seq2 is the cached side in difflib, so it belongs in the outer
         # loop: the index over `left` is built once and reused for every right.
         matcher.set_seq2(bodies[left][:MAX_COMPARE_CHARS])
-        for right in paths[i + 1:]:
+        for right in sorted(rights[left]):
             if seen_hashes[left] == seen_hashes[right]:
                 continue  # exact_duplicates owns this pair
 

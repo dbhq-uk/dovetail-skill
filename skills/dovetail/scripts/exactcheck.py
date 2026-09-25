@@ -28,9 +28,11 @@ import bootstrap
 bootstrap.ensure()
 
 import tomllib  # noqa: E402
+from collections import Counter  # noqa: E402
 from typing import Iterable  # noqa: E402
 
 import fixes  # noqa: E402
+import textcache  # noqa: E402
 from store import make_finding
 
 # ---------------------------------------------------------------------------
@@ -51,12 +53,8 @@ _PLACEHOLDER = re.compile(r'(\.\.\.|…|<[A-Za-z][^>\n]*>|\$\{?[A-Z_]{2,}|/path/
 _REPL = re.compile(r'^\s*(>>>|\$|#|%)\s', re.M)
 
 
-def _read(repo_root: str, path: str) -> str | None:
-    try:
-        with open(os.path.join(repo_root, path), encoding='utf-8') as fh:
-            return fh.read()
-    except (OSError, UnicodeDecodeError):
-        return None
+def _read(inventory: dict, path: str) -> str | None:
+    return textcache.read(inventory, path)
 
 
 def _line_of(text: str, index: int) -> int:
@@ -146,7 +144,7 @@ def flag_drift(inventory: dict, graph: dict) -> list[dict]:
     repo_root = inventory['repo_root']
     parsers: dict[str, tuple[set[str], bool]] = {}
     for entry in _python_files(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         try:
@@ -165,7 +163,7 @@ def flag_drift(inventory: dict, graph: dict) -> list[dict]:
 
     findings: list[dict] = []
     for entry in _docs(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         for _lang, body, start_line in code_blocks(text):
@@ -253,10 +251,9 @@ def unparseable_code_blocks(inventory: dict, graph: dict) -> list[dict]:
     that gets a checker disabled. `jsonl` and `jsonc` are deliberately absent
     from the parser table - neither is JSON.
     """
-    repo_root = inventory['repo_root']
     findings: list[dict] = []
     for entry in _docs(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         seen: dict[tuple[str, str], int] = {}
@@ -311,7 +308,7 @@ def missing_paths(inventory: dict, graph: dict) -> list[dict]:
     findings: list[dict] = []
 
     for entry in _docs(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         # Blank out fenced blocks so command examples are not treated as prose.
@@ -423,10 +420,9 @@ def signature_drift(inventory: dict, graph: dict) -> list[dict]:
     the call is a plain call in a ```python block, and every argument is
     statically readable. Anything else is silence.
     """
-    repo_root = inventory['repo_root']
     sigs: dict[str, list[tuple[str, ast.arguments]]] = {}
     for entry in _python_files(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         try:
@@ -440,7 +436,7 @@ def signature_drift(inventory: dict, graph: dict) -> list[dict]:
 
     findings: list[dict] = []
     for entry in _docs(inventory):
-        text = _read(repo_root, entry['path'])
+        text = _read(inventory, entry['path'])
         if text is None:
             continue
         for lang, body, start_line in code_blocks(text):
@@ -504,11 +500,11 @@ def signature_drift(inventory: dict, graph: dict) -> list[dict]:
 _SEMVER = re.compile(r'\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b')
 
 
-def _declared_versions(repo_root: str, known: set[str]) -> list[tuple[str, str]]:
+def _declared_versions(inventory: dict, known: set[str]) -> list[tuple[str, str]]:
     """(version, source path) declared by a package manifest."""
     out: list[tuple[str, str]] = []
     if 'package.json' in known:
-        text = _read(repo_root, 'package.json')
+        text = _read(inventory, 'package.json')
         if text:
             try:
                 data = json.loads(text)
@@ -517,7 +513,7 @@ def _declared_versions(repo_root: str, known: set[str]) -> list[tuple[str, str]]
             except json.JSONDecodeError:
                 pass
     if 'pyproject.toml' in known:
-        text = _read(repo_root, 'pyproject.toml')
+        text = _read(inventory, 'pyproject.toml')
         if text:
             try:
                 data = tomllib.loads(text)
@@ -528,7 +524,7 @@ def _declared_versions(repo_root: str, known: set[str]) -> list[tuple[str, str]]
                 pass
     for rel in ('.claude-plugin/plugin.json',):
         if rel in known:
-            text = _read(repo_root, rel)
+            text = _read(inventory, rel)
             if text:
                 try:
                     data = json.loads(text)
@@ -547,9 +543,8 @@ def version_drift(inventory: dict, graph: dict) -> list[dict]:
     changelog entries and example output all look identical to a project version,
     and the check has to be trustworthy more than it has to be clever.
     """
-    repo_root = inventory['repo_root']
     known = set(inventory['all_paths'])
-    declared = _declared_versions(repo_root, known)
+    declared = _declared_versions(inventory, known)
     if len(declared) < 2:
         return []
     distinct = {v for v, _ in declared}
@@ -576,6 +571,30 @@ def version_drift(inventory: dict, graph: dict) -> list[dict]:
 _DUNDER = re.compile(r'^__\w+__$')
 
 
+_WORD = re.compile(r'\w+')
+# The lines `_used_in_own_module` strips, one match per definition.
+_DEF_LINE = re.compile(r'^\s*(?:async\s+)?(?:def|class)\s+(\w+)', re.M)
+
+
+def _used_in_own_module(text: str, name: str) -> bool:
+    """Whether a module names `name` anywhere but the line that defines it.
+
+    Uses inside the defining module still count, but the def line itself must
+    not: `def foo` is not a use of foo.
+    """
+    pattern = re.compile(r'(?<![\w])' + re.escape(name) + r'(?![\w])')
+    without_def = re.sub(r'^\s*(?:async\s+)?(?:def|class)\s+'
+                         + re.escape(name) + r'\b', '', text, flags=re.M)
+    return bool(pattern.search(without_def))
+
+
+def _named_elsewhere(inventory: dict, corpus: list[str], path: str, name: str) -> bool:
+    """Search every other file for `name` between non-word characters."""
+    pattern = re.compile(r'(?<![\w])' + re.escape(name) + r'(?![\w])')
+    return any(pattern.search(_read(inventory, other) or '')
+               for other in corpus if other != path)
+
+
 def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
     """A module-level public function or class nothing in the repository names.
 
@@ -587,18 +606,7 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
     Private (`_`-prefixed) and dunder names are skipped, as are `__init__.py`
     re-exports, `conftest.py`, and anything under a tests directory.
     """
-    repo_root = inventory['repo_root']
     definitions: list[tuple[str, str, int]] = []
-    corpus: list[tuple[str, str]] = []
-
-    for entry in inventory['files']:
-        text = _read(repo_root, entry['path'])
-        if text is None:
-            continue
-        corpus.append((entry['path'], text))
-
-    text_by_path = dict(corpus)
-
     for entry in _python_files(inventory):
         path = entry['path']
         base = os.path.basename(path)
@@ -607,7 +615,7 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
             continue
         if any(p in ('test', 'tests', 'fixtures') for p in parts) or base.startswith('test_'):
             continue
-        text = text_by_path.get(path)
+        text = _read(inventory, path)
         if text is None:
             continue
         try:
@@ -625,23 +633,40 @@ def dead_python_code(inventory: dict, graph: dict) -> list[dict]:
     if not definitions:
         return []
 
+    # One pass over the corpus: which words each file holds, and in how many
+    # files each word appears. A name is used elsewhere when some file other
+    # than its own holds it. That is the same test as searching every file for
+    # the name between non-word characters, without one search per name per
+    # file, which made this check quadratic.
+    defining = {path for path, _, _ in definitions}
+    files_holding: dict[str, int] = {}
+    own_uses: dict[str, Counter[str]] = {}
+    corpus: list[str] = []
+    for entry in inventory['files']:
+        text = _read(inventory, entry['path'])
+        if text is None:
+            continue
+        corpus.append(entry['path'])
+        words = Counter(_WORD.findall(text))
+        for word in words:
+            files_holding[word] = files_holding.get(word, 0) + 1
+        if entry['path'] in defining:
+            # In its own module a name counts as used when it appears more
+            # often than the lines that define it: `def foo` is not a use.
+            words.subtract(match.group(1) for match in _DEF_LINE.finditer(text))
+            own_uses[entry['path']] = words
+
     findings: list[dict] = []
     for path, name, line in definitions:
-        pattern = re.compile(r'(?<![\w])' + re.escape(name) + r'(?![\w])')
-        used = False
-        for other_path, text in corpus:
-            if other_path == path:
-                # Uses inside the defining module still count, but the def line
-                # itself must not: `def foo` is not a use of foo.
-                without_def = re.sub(r'^\s*(?:async\s+)?(?:def|class)\s+'
-                                     + re.escape(name) + r'\b', '', text, flags=re.M)
-                if pattern.search(without_def):
-                    used = True
-                    break
-                continue
-            if pattern.search(text):
-                used = True
-                break
+        if _WORD.fullmatch(name):
+            uses = own_uses.get(path, Counter())
+            mine = name in uses
+            used = files_holding.get(name, 0) > (1 if mine else 0) or uses[name] > 0
+        else:
+            # A name that \w+ would split, such as one holding a combining
+            # mark, is not one word to look up. Search for it as before.
+            used = (_named_elsewhere(inventory, corpus, path, name)
+                    or _used_in_own_module(_read(inventory, path) or '', name))
         if used:
             continue
         findings.append(make_finding(

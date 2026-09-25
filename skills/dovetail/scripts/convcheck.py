@@ -18,6 +18,7 @@ import os
 import re
 import stat
 
+import textcache
 from store import make_finding
 
 SHEBANG = re.compile(r'^#!')
@@ -42,12 +43,8 @@ def _is_test(path: str) -> bool:
     return basename.startswith('test_') or basename.startswith('conftest.')
 
 
-def _read(repo_root: str, path: str) -> str | None:
-    try:
-        with open(os.path.join(repo_root, path), encoding='utf-8') as fh:
-            return fh.read()
-    except (OSError, UnicodeDecodeError):
-        return None
+def _read(inventory: dict, path: str) -> str | None:
+    return textcache.read(inventory, path)
 
 
 def shell_scripts_exit_on_error(inventory: dict, graph: dict) -> list[dict]:
@@ -63,7 +60,7 @@ def shell_scripts_exit_on_error(inventory: dict, graph: dict) -> list[dict]:
         path = entry['path']
         if not path.endswith(SHELL_EXTS):
             continue
-        text = _read(repo_root, path)
+        text = _read(inventory, path)
         if text is None:
             continue
         executable = os.access(os.path.join(repo_root, path), os.X_OK)
@@ -100,7 +97,7 @@ def scripts_are_executable(inventory: dict, graph: dict) -> list[dict]:
             continue
         if _is_test(path):
             continue
-        text = _read(repo_root, path)
+        text = _read(inventory, path)
         if text is None or not SHEBANG.match(text):
             continue
         full = os.path.join(repo_root, path)
@@ -131,13 +128,12 @@ def skill_frontmatter(inventory: dict, graph: dict) -> list[dict]:
     happens. The name must also match its directory, since that is what the
     loader keys on.
     """
-    repo_root = inventory['repo_root']
     findings: list[dict] = []
     for entry in inventory['files']:
         path = entry['path']
         if os.path.basename(path) != 'SKILL.md':
             continue
-        text = _read(repo_root, path)
+        text = _read(inventory, path)
         if text is None:
             continue
         block = _FRONTMATTER.match(text)

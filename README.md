@@ -48,8 +48,9 @@ switched off within a week - the triage costs more than the drift. So every exac
 carries a tier. A **proven** finding follows from the structure alone - a link to nothing, a
 code block that does not parse - and fails `--fail-on`. A **heuristic** finding is a likely
 problem that intent can explain - a file nothing links to may be an entry point - and it
-reports without gating unless your config opts that check in. The scan takes seconds, so it
-costs you nothing to run on every pull request. Judged findings never gate a build, in either
+reports without gating unless your config opts that check in. The scan takes seconds, and the
+time grows in line with the size of the repository: about 1.3 seconds of CPU for 1,000 files,
+and about 4 for 3,000. So it costs you nothing to run on every pull request. Judged findings never gate a build, in either
 CI job.
 
 **Nothing reaches a model that Python can compute exactly.** Every rubric names the categories
@@ -128,7 +129,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 11 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 12 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -208,7 +209,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 600 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 609 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

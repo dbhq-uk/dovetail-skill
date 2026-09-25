@@ -38,7 +38,9 @@ repository.
 **`discover`** lists tracked files via git, applies the ignore globs, and records one entry
 per file: path, modality and category from `classify`, size, SHA-256, and last commit time.
 Entries that cannot be read as files - broken symlinks, submodule gitlinks - are skipped
-rather than raised, so one odd entry cannot fail a whole scan.
+rather than raised, so one odd entry cannot fail a whole scan. It reads every file once, to
+hash it, and keeps the text of each text file in a cache (`textcache`) that every later step
+reads from. Before that, one scan read each file about eight times.
 
 **`refgraph`** builds a typed graph over those files. Every edge records where it came from
 (`src`, `line`), how it was written, and what it resolved to. Markdown links, heading anchors,
@@ -50,7 +52,17 @@ link, an anchor and an import are three things one pattern cannot express.
 **The checks** run in a fixed order, each taking `(inventory, graph)`. A check that raises is
 caught and named in `failed_checks` rather than taking down the run. Repo-local plugins run
 last, so they can rely on everything above having completed. Each finding is stamped with the
-check that made it and its tier, proven or heuristic.
+check that made it and its tier, proven or heuristic. The seconds each step took go into
+`timings`, so a slow check is visible.
+
+**No check compares every file with every other.** `near_duplicates` finds its candidate pairs
+by prefix filtering: each file's word shingles go in one order, rarest first, and two files are
+compared only if the start of each list shares a shingle. That finds every pair the Jaccard
+floor would keep, and no others need comparing. `dead_python_code` builds one index of the
+words in each file and looks each definition up in it, rather than searching every file once
+per definition. Both give exactly the findings the pairwise versions gave. On a generated
+repository the whole scan took about 1.3 seconds of CPU for 1,000 files and about 4 for 3,000.
+Before, those two checks alone took over two minutes on 1,000 files, and 3,000 did not finish.
 
 **Triage facts** come next, from `fixes`. A broken link, a dangling anchor or a documented flag
 with exactly one candidate target gets a `fix`: a unified diff against the file as it is on

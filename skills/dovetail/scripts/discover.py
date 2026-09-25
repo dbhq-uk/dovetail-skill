@@ -24,6 +24,7 @@ import datetime as _dt
 import hashlib
 import os
 
+import textcache
 from classify import classify
 from gitmeta import last_commit_times, list_files
 from globmatch import matches_any
@@ -45,6 +46,7 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
     scanned = set(paths)
     symlinks: dict[str, str] = {}
     files: list[dict] = []
+    inventory: dict = {'repo_root': root}
     for path in sorted(paths):
         if path == LEDGER_PATH:
             continue
@@ -58,6 +60,9 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
         except OSError:
             continue  # broken symlink, gitlink, or directory — not a file
         modality, category = classify(path, content)
+        if modality == 'text':
+            # Read once here, for hashing; every check reads it from the cache.
+            textcache.remember(inventory, path, content)
         files.append({
             'path': path,
             'modality': modality,
@@ -67,13 +72,13 @@ def discover(repo_root: str, ignore: list[str] | None = None) -> dict:
             'last_commit_iso': times.get(path),
         })
 
-    return {
-        'repo_root': root,
+    inventory.update({
         'generated_at_iso': _dt.datetime.now(_dt.timezone.utc).isoformat(),
         'files': files,
         'all_paths': sorted(all_paths),
         'symlinks': symlinks,
-    }
+    })
+    return inventory
 
 
 def _symlink_target(root: str, path: str) -> str | None:
