@@ -34,7 +34,7 @@ import plugins as plugin_runner
 from config import ConfigError, check_enabled, load_config
 from discover import discover
 from gitmeta import changed_since, is_git_repo, rev_exists
-from refgraph import build_graph
+from refgraph import build_graph, written_target
 from store import load_decisions
 
 SEVERITY_RANK = {'high': 0, 'medium': 1, 'low': 2}
@@ -85,10 +85,8 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
                 'fetch-depth: 0.'
             )
         changed = changed_since(root, since)
-        findings = [
-            f for f in findings
-            if any(e['file'] in changed for e in f['evidence'])
-        ]
+        targets = _link_targets(graph)
+        findings = [f for f in findings if _touches(f, changed, targets)]
 
     decisions = load_decisions(root)
     kept = [f for f in findings if f['id'] not in decisions]
@@ -107,6 +105,47 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             'profile': config['profile'],
             'file_count': len(inventory['files']),
             'edge_count': len(graph['edges'])}
+
+
+# Findings about a link, where the change that caused them is usually to the
+# target rather than to the file holding the link.
+_LINK_CATEGORIES = frozenset({'broken_link', 'dangling_anchor'})
+
+
+def _link_targets(graph: dict) -> dict[tuple[str, int], set[str]]:
+    """Every path each (file, line) links to, resolved or only as written."""
+    targets: dict[tuple[str, int], set[str]] = {}
+    for edge in graph['edges']:
+        found = targets.setdefault((edge['src'], edge['line']), set())
+        if edge['dst']:
+            found.add(edge['dst'])
+        written = written_target(edge['src'], edge['raw'])
+        if written:
+            found.add(written)
+    return targets
+
+
+def _touches(finding: dict, changed: set[str],
+             targets: dict[tuple[str, int], set[str]]) -> bool:
+    """Whether a change since the ref could have caused this finding.
+
+    A finding's evidence names the file holding a link, but the pull request
+    that breaks the link is usually the one that deletes, renames or edits
+    the file it points at. Matching on evidence alone let that pull request
+    pass and blamed the break on whoever touched the linking file next.
+    """
+    if any(item['file'] in changed for item in finding['evidence']):
+        return True
+    if finding['category'] not in _LINK_CATEGORIES:
+        return False
+    for item in finding['evidence']:
+        for target in targets.get((item['file'], item['line']), ()):
+            # An import written as `./b` names b.ts, and a link to a
+            # directory names the files in it.
+            if target in changed or any(
+                    path.startswith((target + '.', target + '/')) for path in changed):
+                return True
+    return False
 
 
 def _escape_data(message: str) -> str:

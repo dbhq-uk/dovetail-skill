@@ -24,7 +24,7 @@ Or ask in any session: *"run dovetail on this repo"*.
 | Flag | Meaning |
 |---|---|
 | `--format json\|github` | JSON to stdout, or GitHub workflow annotations. |
-| `--since <ref>` | Only report findings touching files changed since `<ref>`. |
+| `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link. |
 | `--fail-on none\|low\|medium\|high` | Exit non-zero when a finding at or above this severity exists. |
 
 ## Suppressing a finding

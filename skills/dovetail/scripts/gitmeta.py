@@ -77,9 +77,13 @@ def last_commit_times(repo_root: str, paths: list[str]) -> dict[str, str | None]
     for start in range(0, len(paths), _PATH_CHUNK_SIZE):
         batch = paths[start:start + _PATH_CHUNK_SIZE]
         try:
+            # --relative: git prints names from the top of the repository, but
+            # `paths` are relative to repo_root. On a subdirectory scan they
+            # never matched, every time stayed None, and translation_lag went
+            # quiet without saying so.
             out = _run(repo_root, [
                 '-c', 'core.quotePath=false',
-                'log', '--diff-merges=first-parent',
+                'log', '--diff-merges=first-parent', '--relative',
                 f'--format={RECORD_SEP}%cI', '--name-only', '--', *batch,
             ])
         except _SOFT_ERRORS:
@@ -105,13 +109,36 @@ def rev_exists(repo_root: str, ref: str) -> bool:
 
 
 def changed_since(repo_root: str, ref: str) -> set[str]:
-    """Files changed between the merge base with `ref` and HEAD.
+    """Paths changed between the merge base with `ref` and HEAD.
 
-    Uncommitted and staged changes are not reflected — only committed diffs
+    Every path the diff touches: added, modified and deleted files, and both
+    the old and the new name of a rename. A deleted or renamed file is often
+    the one that breaks a link, so it has to be here even though it no
+    longer exists.
+
+    Paths are relative to `repo_root`, as the inventory's are, and a change
+    outside it is left out. Without `--relative` git names paths from the top
+    of the repository, so a subdirectory scan matched nothing and passed.
+
+    Uncommitted and staged changes are not reflected - only committed diffs
     up to HEAD are considered.
     """
     try:
-        out = _run(repo_root, ['diff', '--name-only', f'{ref}...HEAD'])
+        out = _run(repo_root, ['-c', 'core.quotePath=false', 'diff',
+                               '--name-status', '-M', '-z', '--relative',
+                               f'{ref}...HEAD'])
     except _SOFT_ERRORS:
         return set()
-    return {line for line in out.split('\n') if line}
+    fields = out.split('\0')
+    changed: set[str] = set()
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if not status:
+            index += 1
+            continue
+        # A rename or copy names two paths, the old one first.
+        width = 2 if status[0] in 'RC' else 1
+        changed.update(p for p in fields[index + 1:index + 1 + width] if p)
+        index += 1 + width
+    return changed

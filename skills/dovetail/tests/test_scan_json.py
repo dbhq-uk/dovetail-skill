@@ -152,6 +152,77 @@ class TestSinceFiltering(ScanCase):
         self.assertIn('shallow clone', proc.stderr)
 
 
+class TestSinceSeesWhatBrokeTheLink(unittest.TestCase):
+    """The change that breaks a link is usually to its target, not to the
+    file holding it - and a subdirectory scan must not go quiet."""
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp()
+        git(self.repo, 'init', '-q', '-b', 'main')
+        write(self.repo, 'README.md', '# Project\n\nSee [docs](docs/a.md).\n')
+        write(self.repo, 'docs/a.md', '# A\n\nSee [b](b.md) and [usage](b.md#usage).\n')
+        write(self.repo, 'docs/b.md', '# B\n\n## Usage\n\nRun it.\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'init')
+
+    def tearDown(self):
+        shutil.rmtree(self.repo, ignore_errors=True)
+
+    def categories(self, root=None, since='HEAD~1'):
+        result = run_scan(root or self.repo, since=since)
+        return sorted(f['category'] for f in result['findings'])
+
+    def test_deleting_the_target_is_reported(self):
+        git(self.repo, 'rm', '-q', 'docs/b.md')
+        git(self.repo, 'commit', '-qm', 'delete b')
+        self.assertIn('broken_link', self.categories())
+
+    def test_renaming_the_target_is_reported(self):
+        git(self.repo, 'mv', 'docs/b.md', 'docs/c.md')
+        git(self.repo, 'commit', '-qm', 'rename b')
+        self.assertIn('broken_link', self.categories())
+
+    def test_renaming_a_heading_in_the_target_is_reported(self):
+        write(self.repo, 'docs/b.md', '# B\n\n## How to use it\n\nRun it.\n')
+        git(self.repo, 'commit', '-qam', 'rename heading')
+        self.assertIn('dangling_anchor', self.categories())
+
+    def test_an_unrelated_change_does_not_inherit_old_breakage(self):
+        # The point of --since: existing drift stays out of other changes.
+        write(self.repo, 'docs/a.md', '# A\n\nSee [gone](gone.md).\n')
+        git(self.repo, 'commit', '-qam', 'break a link')
+        base = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=self.repo,
+                              capture_output=True, text=True).stdout.strip()
+        write(self.repo, 'notes.md', '# Notes\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-qm', 'unrelated')
+        self.assertNotIn('broken_link', self.categories(since=base))
+
+    def test_a_subdirectory_scan_reports_a_link_broken_in_it(self):
+        write(self.repo, 'docs/a.md', '# A\n\nSee [gone](gone.md).\n')
+        git(self.repo, 'commit', '-qam', 'break a link')
+        self.assertIn('broken_link', self.categories())
+        self.assertIn('broken_link',
+                      self.categories(root=os.path.join(self.repo, 'docs')))
+
+    def test_a_subdirectory_scan_fails_the_gate_from_the_cli(self):
+        write(self.repo, 'docs/a.md', '# A\n\nSee [gone](gone.md).\n')
+        git(self.repo, 'commit', '-qam', 'break a link')
+        proc = subprocess.run(
+            [sys.executable, SCRIPT, 'docs', '--since', 'HEAD~1',
+             '--format', 'github', '--fail-on', 'high'],
+            cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn('broken_link', proc.stdout)
+
+    def test_a_subdirectory_scan_has_commit_times(self):
+        from discover import discover
+        inventory = discover(os.path.join(self.repo, 'docs'))
+        times = {f['path']: f['last_commit_iso'] for f in inventory['files']}
+        self.assertEqual(sorted(times), ['a.md', 'b.md'])
+        self.assertTrue(all(times.values()), times)
+
+
 class TestCli(ScanCase):
     def test_json_format_emits_parseable_output(self):
         proc = subprocess.run(

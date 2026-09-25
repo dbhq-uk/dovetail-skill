@@ -56,7 +56,11 @@ and reports the count. Then findings are sorted by severity, category, and first
 file, and printed as JSON or as GitHub annotations.
 
 `--since` filters between the checks and suppression: a finding survives only if some evidence
-item names a file changed since the ref.
+item names a file changed since the ref, or, for a broken link or dangling anchor, the file the
+link points at changed. The target matters because the change that breaks a link is usually a
+delete, a rename or a heading edit in the target, and the linking file is untouched. Deleted
+and renamed paths count, and paths come from `git diff --relative`, so a subdirectory scan
+matches its own paths rather than silently matching none.
 
 ## Two supporting details
 

@@ -169,7 +169,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 | Flag | Meaning |
 |---|---|
 | `--format json\|github` | JSON to stdout, or GitHub workflow annotations |
-| `--since <ref>` | Only report findings touching files changed since `<ref>` |
+| `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link |
 | `--fail-on none\|low\|medium\|high` | Exit non-zero when a finding at or above this severity exists |
 | `--ignore <glob>` | Exclude a glob; repeatable |
 
@@ -208,7 +208,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 477 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 488 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),
