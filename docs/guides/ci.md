@@ -25,18 +25,19 @@ Only the heuristic checks can go there; the proven ones always gate. The
 [reference](../reference.md#deterministic-checks) says which check is which.
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     fetch-depth: 0            # --since needs the base ref in history
 
-- uses: actions/setup-python@v5
+- uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
   with:
     python-version: '3.12'
 
 - name: Check out dovetail
-  uses: actions/checkout@v4
+  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     repository: dbhq-uk/dovetail-skill
+    ref: f0273d86acd608a1bf20b7a19a469852953f3c28
     path: .dovetail-skill
 
 - name: Scan
@@ -47,7 +48,14 @@ Only the heuristic checks can go there; the proven ones always gate. The
       --fail-on high
 ```
 
-Three details in there are load-bearing.
+Four details in there are load-bearing.
+
+**Everything is pinned to a commit.** Each action is pinned to a commit SHA, with its version in
+a comment, and dovetail itself is checked out at a fixed `ref`. So your CI runs the code you
+chose, not whatever a tag or dovetail's `main` points at that day. Dependabot can move the
+actions for you. Move dovetail's `ref` yourself, to a commit on
+[`main`](https://github.com/dbhq-uk/dovetail-skill/commits/main), when you want a newer one.
+The per-PR template also sets `permissions: contents: read`, because the scan only reads.
 
 **`fetch-depth: 0`.** `--since` resolves the base ref out of history. On GitHub's default
 shallow clone that ref is absent, and the scan exits `2` and says so rather than passing
@@ -80,8 +88,10 @@ everything after it fails. The judgement step needs `CLAUDE_CODE_OAUTH_TOKEN` as
 secret, from `claude setup-token`; without it the job warns and carries on with deterministic
 findings only, rather than failing.
 
-`workflow_dispatch` takes a `profile` input - `default`, `cheap` or `thorough` - so you can
-run a deeper audit on demand without editing the file.
+On the schedule it passes no profile, so `profile` in `.dovetail/config.toml` applies.
+`workflow_dispatch` takes a `profile` input - `config` (the default, which does the same),
+`default`, `cheap` or `thorough` - so you can run a deeper audit on demand without editing
+the file. Each reviewer runs on the model and effort its roster entry gives it.
 
 ## Why judged findings never fail a build
 

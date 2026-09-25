@@ -135,7 +135,7 @@ def build_prompt(name: str, repo_root: str, context: dict) -> str:
 
 
 def run_claude(prompt: str, model: str, repo_root: str,
-               timeout: int = DEFAULT_TIMEOUT) -> str:
+               timeout: int = DEFAULT_TIMEOUT, effort: str | None = None) -> str:
     """One headless `claude -p` call. Raises on any non-zero exit.
 
     The prompt goes on **stdin**, not argv. Passing it as an argument works
@@ -145,9 +145,13 @@ def run_claude(prompt: str, model: str, repo_root: str,
     a limit that scales with the repository being audited, so the failure only
     appears on exactly the repositories the tool is most useful on. stdin has
     no such ceiling.
+
+    `effort` is the reviewer's effort from the roster. Without it every
+    reviewer ran at the CLI's default, whatever the roster or the config said.
     """
+    effort_flag = ['--effort', effort] if effort else []
     result = subprocess.run(
-        ['claude', '-p', '--model', model,
+        ['claude', '-p', '--model', model, *effort_flag,
          '--allowedTools', 'Read,Glob,Grep'],
         input=prompt,
         cwd=repo_root, capture_output=True, text=True, timeout=timeout,
@@ -255,10 +259,13 @@ def escalation_prompt(finding: dict) -> str:
     )
 
 
-def dispatch(repo_root: str, profile: str = 'default',
+def dispatch(repo_root: str, profile: str | None = None,
              only: list[str] | None = None,
              timeout: int = DEFAULT_TIMEOUT) -> dict:
-    """Run the judgement layer headlessly and return findings plus failures."""
+    """Run the judgement layer headlessly and return findings plus failures.
+
+    With no `profile`, the one in `.dovetail/config.toml` applies.
+    """
     plan = plan_shards(repo_root, profile=profile, only=only)
     root = plan['root']
     profile = plan['profile']
@@ -284,7 +291,7 @@ def dispatch(repo_root: str, profile: str = 'default',
             try:
                 raw = run_claude(
                     prompt if attempt == 0 else prompt + RETRY_SUFFIX,
-                    shard['model'], root, timeout=timeout)
+                    shard['model'], root, timeout=timeout, effort=shard['effort'])
             except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError,
                     OSError) as exc:
                 return label, None, f'{type(exc).__name__}: {exc}'[:400]
@@ -353,7 +360,7 @@ def _escalate(repo_root: str, findings: list[dict], roster: dict,
             continue
         try:
             raw = run_claude(escalation_prompt(finding), 'opus', repo_root,
-                             timeout=timeout)
+                             timeout=timeout, effort='high')
             judged = validate_findings(raw, name, repo_root)
         except (RuntimeError, ValidationError, subprocess.TimeoutExpired,
                 FileNotFoundError, OSError) as exc:

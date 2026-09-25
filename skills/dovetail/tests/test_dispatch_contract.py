@@ -148,7 +148,7 @@ class Robustness(Base):
     def test_dispatch_retries_once_on_unparseable_output(self):
         calls = []
 
-        def fake_run(prompt, model, repo_root, timeout=0):
+        def fake_run(prompt, model, repo_root, timeout=0, effort=None):
             calls.append(prompt)
             # Prose first, valid JSON once the contract is restated.
             return 'Sure! Here is what I found...' if len(calls) == 1 else '[]'
