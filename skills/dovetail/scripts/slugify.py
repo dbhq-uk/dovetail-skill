@@ -144,7 +144,11 @@ def _code_lines(lines: list[str]) -> list[bool]:
     return code
 
 
-def _prepare(markdown: str) -> tuple[list[str], list[str]]:
+# The two copies `_prepare` returns: code blanked, and inline code blanked too.
+_Prepared = tuple[list[str], list[str]]
+
+
+def _prepare(markdown: str) -> _Prepared:
     """The document's lines with code, comments and front matter blanked.
 
     Returns two copies. The first keeps inline code, for rendering heading
@@ -272,9 +276,9 @@ def render_inline(text: str, refs: frozenset[str] = frozenset()) -> str:
         for c in rendered)
 
 
-def _headings(markdown: str) -> list[str]:
+def _headings(markdown: str, prepared: _Prepared | None = None) -> list[str]:
     """Rendered text of every heading GitHub gives an id, in document order."""
-    lines, masked = _prepare(markdown)
+    lines, masked = prepared if prepared is not None else _prepare(markdown)
     refs = frozenset(_norm_label(m.group(1)) for line in lines
                      if (m := _REFDEF.match(line)))
 
@@ -335,11 +339,11 @@ def _headings(markdown: str) -> list[str]:
     return [rendered for _, _, rendered in found]
 
 
-def heading_slugs(markdown: str) -> list[str]:
+def heading_slugs(markdown: str, prepared: _Prepared | None = None) -> list[str]:
     """Ids GitHub gives the document's headings, in order, duplicates suffixed."""
     slugs: list[str] = []
     occurrences: dict[str, int] = {}
-    for rendered in _headings(markdown):
+    for rendered in _headings(markdown, prepared):
         base = slugify(rendered)
         if not base:
             continue   # GitHub gives a heading with an empty slug no id
@@ -356,10 +360,11 @@ def heading_slugs(markdown: str) -> list[str]:
     return slugs
 
 
-def html_ids(markdown: str) -> list[str]:
+def html_ids(markdown: str, prepared: _Prepared | None = None) -> list[str]:
     """`id` and `name` attributes on HTML elements, which GitHub keeps as anchors."""
+    masked = (prepared if prepared is not None else _prepare(markdown))[1]
     found: list[str] = []
-    for tag in _TAG_ATTRS.finditer('\n'.join(_prepare(markdown)[1])):
+    for tag in _TAG_ATTRS.finditer('\n'.join(masked)):
         for match in _ID_ATTR.finditer(tag.group(1)):
             value = next(g for g in match.groups() if g is not None)
             if value:
@@ -369,4 +374,7 @@ def html_ids(markdown: str) -> list[str]:
 
 def anchor_ids(markdown: str) -> list[str]:
     """Every fragment a link into this document can land on."""
-    return heading_slugs(markdown) + html_ids(markdown)
+    # Both halves read the same prepared copy, and preparing it is most of
+    # their cost, so it is done once. Neither changes it.
+    prepared = _prepare(markdown)
+    return heading_slugs(markdown, prepared) + html_ids(markdown, prepared)

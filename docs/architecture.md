@@ -60,9 +60,29 @@ by prefix filtering: each file's word shingles go in one order, rarest first, an
 compared only if the start of each list shares a shingle. That finds every pair the Jaccard
 floor would keep, and no others need comparing. `dead_python_code` builds one index of the
 words in each file and looks each definition up in it, rather than searching every file once
-per definition. Both give exactly the findings the pairwise versions gave. On a generated
-repository the whole scan took about 1.3 seconds of CPU for 1,000 files and about 4 for 3,000.
-Before, those two checks alone took over two minutes on 1,000 files, and 3,000 did not finish.
+per definition. Both give exactly the findings the pairwise versions gave. Before, those two
+checks alone took over two minutes on 1,000 generated files, and 3,000 did not finish.
+
+**On real content, the graph and `near_duplicates` cost the most.** A real repository has
+longer files than a generated one, so every check has more text to read. Two changes cut that
+cost without changing a finding. `near_duplicates` counts and sorts only the shingles that more
+than one file holds, and in a real repository most shingles belong to one file. Building the
+graph skips a pattern on any line that lacks a character the pattern needs: a path needs a `/`,
+a markdown link needs `](` and an HTML attribute needs `=`. Most lines have none of them. And
+each markdown file is prepared once to read its anchors, not twice.
+
+**Measured speed**, on 25 Sep 2026 with Python 3.12 on Linux. CPU is what `time` reports as
+user plus sys for `scan.py <repo> --format json`, so it includes the git commands the scan
+runs. Each figure is the best of three runs, before and after the two changes above:
+
+| Repository | Files | CPU before | CPU after |
+|---|---|---|---|
+| Generated, as `tests/test_scaling.py` builds it | 1,000 | 1.5 s | 1.2 s |
+| Generated, as `tests/test_scaling.py` builds it | 3,000 | 4.8 s | 3.7 s |
+| A real repository, with markdown files thousands of lines long | about 900 | 19.6 s | 14.3 s |
+
+Wall clock depends on the machine more than CPU does. For the real repository it was between 18
+and 37 seconds, on a shared 8-core machine that was busy with other work.
 
 **Triage facts** come next, from `fixes`. A broken link, a dangling anchor or a documented flag
 with exactly one candidate target gets a `fix`: a unified diff against the file as it is on

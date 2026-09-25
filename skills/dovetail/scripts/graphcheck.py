@@ -10,6 +10,7 @@ near duplicates, and translation lag.
 
 from __future__ import annotations
 
+import collections
 import difflib
 import math
 import posixpath
@@ -251,8 +252,8 @@ SHINGLE_JACCARD_FLOOR = 0.30
 # similarity for a pair is therefore computed over at most this many characters.
 # Truncation only ever affects files larger than the cap, and a document pair
 # that is 95% identical across its first 40k characters is a near-duplicate by
-# any useful definition. Bounding this is what keeps the promise that a scan
-# takes seconds.
+# any useful definition. Bounding this is what keeps one pair of large files
+# from dominating a scan.
 MAX_COMPARE_CHARS = 40_000
 
 # Filename-shaped tokens, for the orphan check's liveness evidence. Bounded
@@ -476,28 +477,66 @@ def candidate_pairs(sets: dict[str, frozenset[int]], floor: float) -> set[tuple[
     too, and the caller still checks each one. Rare elements make short
     posting lists, so the work follows the number of similar pairs rather
     than the square of the number of files.
+
+    Only the elements two or more sets hold are counted and sorted. In a real
+    repository most shingles belong to one file, and counting and sorting all
+    of them was most of the cost of this check. The prefix is still the same
+    one: see the comment in the loop.
     """
-    frequency: dict[int, int] = {}
+    # Set operations find the elements held more than once without counting
+    # every element one at a time in Python.
+    seen: set[int] = set()
+    repeated: set[int] = set()
     for members in sets.values():
-        for element in members:
-            frequency[element] = frequency.get(element, 0) + 1
+        repeated |= members & seen
+        seen |= members
+
+    frequency: collections.Counter = collections.Counter()
+    held: dict[str, frozenset[int]] = {}
+    for path, members in sets.items():
+        held[path] = members & repeated
+        frequency.update(held[path])
+
+    # One order for every set: rarest first, ties broken by the element. A
+    # stable sort by frequency over a list already sorted by element gives
+    # exactly that order.
+    order = sorted(repeated)
+    order.sort(key=frequency.__getitem__)
+    rank = {element: position for position, element in enumerate(order)}
 
     index: dict[int, list[str]] = {}
     pairs: set[tuple[str, str]] = set()
     for path in sorted(sets):
-        ordered = sorted(sets[path], key=lambda element: (frequency[element], element))
+        size = len(sets[path])
         # The small margin keeps float error from rounding 0.3 * 10 up to 4,
         # which would shorten the prefix and could drop a real pair.
-        shared = max(1, math.ceil(floor * len(ordered) - 1e-9))
-        # An element no other set holds can pair this set with nothing.
-        prefix = [element for element in ordered[:len(ordered) - shared + 1]
-                  if frequency[element] > 1]
+        shared = max(1, math.ceil(floor * size - 1e-9))
+        # The prefix is the first `size - shared + 1` elements in the order,
+        # less those no other set holds, which can pair this set with
+        # nothing. Those all have frequency 1, the lowest, so they fill the
+        # front of the order. What is left is the rarest
+        # `len(held) - shared + 1` of the elements another set also holds.
+        keep = max(0, len(held[path]) - shared + 1)
+        prefix = sorted(held[path], key=rank.__getitem__)[:keep]
         for element in prefix:
             for other in index.get(element, ()):
                 pairs.add((other, path))
         for element in prefix:
             index.setdefault(element, []).append(path)
     return pairs
+
+
+def shingle_set(body: str) -> frozenset[int]:
+    """The hashed word shingles of a normalised body, for the Jaccard prefilter.
+
+    Each shingle is the tuple of its words, hashed. The words hold no
+    whitespace, so two tuples are equal exactly when the same words joined
+    with spaces are, and no string has to be built for each shingle.
+    """
+    words = body.split()
+    if len(words) < SHINGLE_SIZE:
+        return frozenset({hash(body)})
+    return frozenset(map(hash, zip(*(words[i:] for i in range(SHINGLE_SIZE)))))
 
 
 def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> list[dict]:
@@ -527,16 +566,7 @@ def near_duplicates(inventory: dict, graph: dict, threshold: float = 0.95) -> li
     # looser than the similarity being tested for, because a prefilter that
     # discards a genuine near-duplicate is a silent false negative, which is
     # worse than the work it saves.
-    shingles: dict[str, frozenset[int]] = {}
-    for path, body in bodies.items():
-        words = body.split()
-        if len(words) < SHINGLE_SIZE:
-            shingles[path] = frozenset({hash(body)})
-            continue
-        shingles[path] = frozenset(
-            hash(' '.join(words[i:i + SHINGLE_SIZE]))
-            for i in range(len(words) - SHINGLE_SIZE + 1)
-        )
+    shingles = {path: shingle_set(body) for path, body in bodies.items()}
 
     # `real_quick_ratio() >= threshold` is algebraically `r >= t/(2-t)` where
     # r is the length ratio. Checking it directly costs O(1) and avoids

@@ -10,12 +10,18 @@ needed its text.
 These tests hold the fix three ways: the candidate pairs are exactly the ones
 the old loop could have reported, the dead-code index answers exactly as the
 old search did, and doubling the repository roughly doubles the time.
+
+A real repository then showed `near_duplicates` spending most of its time
+counting and sorting shingles that only one file holds. The tests below also
+hold that the cheaper version pairs exactly the same files, and that hashing
+word tuples gives the same shingles as hashing the joined words did.
 """
 
 from __future__ import annotations
 
 import builtins
 import itertools
+import math
 import os
 import random
 import shutil
@@ -118,6 +124,69 @@ class TestCandidatePairs(unittest.TestCase):
     def test_unrelated_sets_are_never_paired(self):
         sets = {f'f{i}': frozenset(range(i * 100, i * 100 + 50)) for i in range(30)}
         self.assertEqual(graphcheck.candidate_pairs(sets, 0.3), set())
+
+    def test_the_same_pairs_as_sorting_every_element(self):
+        # candidate_pairs counts and sorts only the elements more than one set
+        # holds. It must give exactly the pairs the version that sorted every
+        # element gave, not merely a superset of the brute force, or the
+        # near-duplicate findings could change. Many elements held once, and
+        # many ties in frequency, are the cases that matter.
+        for seed, floor in itertools.product(range(20), (0.3, 0.5, 0.8, 0.95)):
+            rng = random.Random(seed)
+            common = list(range(rng.randint(3, 40)))
+            sets = {}
+            for n in range(rng.randint(2, 30)):
+                own = range(1000 * (n + 1), 1000 * (n + 1) + rng.randint(0, 80))
+                picked = rng.sample(common, rng.randint(0, len(common)))
+                sets[f'f{n:02d}'] = frozenset(picked) | frozenset(own)
+            with self.subTest(seed=seed, floor=floor):
+                self.assertEqual(graphcheck.candidate_pairs(sets, floor),
+                                 sorted_every_element_pairs(sets, floor))
+
+
+def sorted_every_element_pairs(sets: dict[str, frozenset], floor: float) -> set[tuple[str, str]]:
+    """candidate_pairs as it was before it skipped the elements held once."""
+    frequency: dict[int, int] = {}
+    for members in sets.values():
+        for element in members:
+            frequency[element] = frequency.get(element, 0) + 1
+    index: dict[int, list[str]] = {}
+    pairs: set[tuple[str, str]] = set()
+    for path in sorted(sets):
+        ordered = sorted(sets[path], key=lambda element: (frequency[element], element))
+        shared = max(1, math.ceil(floor * len(ordered) - 1e-9))
+        prefix = [element for element in ordered[:len(ordered) - shared + 1]
+                  if frequency[element] > 1]
+        for element in prefix:
+            for other in index.get(element, ()):
+                pairs.add((other, path))
+        for element in prefix:
+            index.setdefault(element, []).append(path)
+    return pairs
+
+
+class TestShingles(unittest.TestCase):
+    """Hashing word tuples gives the same shingles as hashing joined strings."""
+
+    def test_overlap_is_what_joined_strings_give(self):
+        def joined(body: str) -> frozenset[str]:
+            words = body.split()
+            if len(words) < graphcheck.SHINGLE_SIZE:
+                return frozenset({body})
+            return frozenset(' '.join(words[i:i + graphcheck.SHINGLE_SIZE])
+                             for i in range(len(words) - graphcheck.SHINGLE_SIZE + 1))
+
+        vocab = ['a', 'b', 'a b', 'ab', 'x.y', '-', 'é', 'the']
+        for seed in range(40):
+            rng = random.Random(seed)
+            left, right = (' '.join(' '.join(rng.choice(vocab).split())
+                                    for _ in range(rng.randint(0, 30)))
+                           for _ in range(2))
+            with self.subTest(seed=seed):
+                a, b = graphcheck.shingle_set(left), graphcheck.shingle_set(right)
+                ja, jb = joined(left), joined(right)
+                self.assertEqual((len(a), len(b), len(a & b)),
+                                 (len(ja), len(jb), len(ja & jb)))
 
 
 class TestDeadCodeIndex(unittest.TestCase):
