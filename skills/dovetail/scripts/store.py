@@ -93,16 +93,22 @@ def load_decisions(repo_root: str) -> dict[str, dict]:
     return decisions
 
 
-def stale_decisions(decisions: dict[str, dict], live_ids: set[str]) -> list[dict]:
+def stale_decisions(decisions: dict[str, dict], live_ids: set[str],
+                    ran: set[str] | None = None) -> list[dict]:
     """Ledger rows that match no finding the scan produced.
 
     A row recorded for a judged finding is never stale here: a scan cannot
     reproduce a reviewer's finding, so it cannot tell a live one from a gone
     one. `decide` marks those rows `"layer": "judged"`. A row with no layer
     predates that field and is checked like an exact one.
+
+    `decide` also records the row's `check`. When `ran` is given, a row whose
+    check did not run this time (switched off, failed, or a plugin skipped by
+    `--no-plugins`) is not reported either: its finding may well still exist.
     """
     stale = [row for fid, row in decisions.items()
-             if fid not in live_ids and row.get('layer') != 'judged']
+             if fid not in live_ids and row.get('layer') != 'judged'
+             and (ran is None or 'check' not in row or row['check'] in ran)]
     return sorted(stale, key=lambda row: (str(row.get('at', '')), row['id']))
 
 

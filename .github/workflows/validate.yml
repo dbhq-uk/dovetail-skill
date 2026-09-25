@@ -161,8 +161,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      # --fail-on low, so this repository's own rules in .dovetail/checks/,
+      # which the config opts into the gate, fail the build at any severity.
+      # Heuristic findings still only warn.
       - name: Scan this repository
-        run: python3 skills/dovetail/scripts/scan.py . --format github --fail-on high
+        run: python3 skills/dovetail/scripts/scan.py . --format github --fail-on low
 
       # The repo-local plugin is part of the scan here, and a plugin that fails
       # to load is reported rather than fatal - which would make it easy to

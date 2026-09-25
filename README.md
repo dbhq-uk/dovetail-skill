@@ -129,7 +129,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 14 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 15 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -173,6 +173,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 | `--since <ref>` | Only report findings touching files changed since `<ref>`, including the target of a broken link |
 | `--fail-on none\|low\|medium\|high` | Exit non-zero when a proven finding at or above this severity exists |
 | `--ignore <glob>` | Exclude a glob; repeatable |
+| `--no-plugins` | Skip `.dovetail/checks/*.py`, which is code from the scanned repository |
 
 The whole tutorial is [docs/getting-started.md](docs/getting-started.md).
 
@@ -209,7 +210,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 630 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 643 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

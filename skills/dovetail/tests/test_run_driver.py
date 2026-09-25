@@ -238,6 +238,7 @@ class TestDecide(Base):
         self.ok('decide', self.next_id(), 'wontfix', '--reason', 'kept on purpose')
         (row,) = self.ledger_rows()
         self.assertEqual(row['layer'], 'exact')
+        self.assertEqual(row['check'], 'broken_links')
 
     def test_the_summary_names_a_decision_that_matches_nothing(self):
         self.ok('scan')

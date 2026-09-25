@@ -125,8 +125,27 @@ first. And no when deciding it needs judgement: if your check would have to gues
 right, it is a question for the judgement layer or for a person, not for a plugin that will be
 confidently wrong on every run.
 
-## One current limitation
+## Letting a plugin fail a build
 
-`--fail-on` counts findings whose source is `graph` or `check:*`. Plugin findings carry tier
-`heuristic`, and appear in the JSON, in the annotations and in the triage queue, but they do not
-currently fail a build.
+A plugin's findings carry tier `heuristic`. They appear in the JSON, in the annotations and in
+the triage queue, but they do not fail `--fail-on` until you opt the plugin in:
+
+```toml
+[plugins.house_style_dashes]
+gate = true
+```
+
+The name is the module's, without `.py`, and one that matches no plugin stops the run. A gated
+plugin's findings count at their own severity, so a `low` finding fails `--fail-on low` and not
+`--fail-on high`. This repository gates all three of its plugins and runs its own CI at
+`--fail-on low`, so a stale test count fails the build.
+
+## Plugins are code from the repository
+
+A plugin runs on every scan, with your permissions. In CI, the per-PR template scans the pull
+request's checkout, so a pull request can add or change a plugin and have it run there. Scan a
+repository you do not trust with `--no-plugins`. It skips `.dovetail/checks/` and says so: the
+JSON counts the skipped plugins in `plugins_skipped`, and the run header names them.
+
+A plugin's `check` function is an entry point. dovetail calls it by name, so `dead_python_code`
+never reports it.

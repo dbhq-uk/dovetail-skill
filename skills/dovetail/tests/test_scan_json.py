@@ -55,7 +55,8 @@ class TestRunScan(ScanCase):
         self.assertEqual(
             set(result),
             {'findings', 'suppressed', 'stale_decisions', 'counts', 'failed_checks',
-             'profile', 'gate', 'file_count', 'edge_count', 'timings'})
+             'profile', 'gate', 'plugins_skipped', 'file_count', 'edge_count',
+             'timings'})
 
     def test_counts_by_severity(self):
         result = run_scan(self.repo)

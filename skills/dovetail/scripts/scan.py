@@ -43,8 +43,12 @@ SEVERITY_RANK = {'high': 0, 'medium': 1, 'low': 2}
 
 
 def run_scan(repo_root: str, *, ignore: list[str] | None = None,
-             since: str | None = None) -> dict:
-    """Run every deterministic check and return findings plus counts."""
+             since: str | None = None, plugins: bool = True) -> dict:
+    """Run every deterministic check and return findings plus counts.
+
+    `plugins=False` skips `.dovetail/checks/`, which is code from the scanned
+    repository. The result says so, rather than reading like a full scan.
+    """
     root = os.path.abspath(repo_root)
     if not os.path.isdir(root):
         raise ValueError(f'not a directory: {repo_root}')
@@ -67,6 +71,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
 
     findings: list[dict] = []
     failed_checks: list[str] = []
+    ran: set[str] = set()  # checks that ran to the end, for stale_decisions
     for check in (graphcheck.ALL_CHECKS + exactcheck.ALL_CHECKS
                   + convcheck.ALL_CHECKS + cochange.ALL_CHECKS):
         name = check.__name__
@@ -80,6 +85,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             continue
         finally:
             timings[name] = _since(started)
+        ran.add(name)
         tier = 'heuristic' if name in HEURISTIC_CHECKS else 'proven'
         for finding in produced:
             finding['check'] = name
@@ -88,12 +94,15 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
 
     # Repo-local checks last, so a plugin can rely on everything above having
     # run. A plugin that raises is named, not fatal. Its findings are
-    # heuristic: nothing about a plugin says its rule is certain.
-    for result in plugin_runner.run_plugins(root, inventory, graph):
+    # heuristic: nothing about a plugin says its rule is certain. They gate
+    # only when `[plugins.<name>] gate = true` opts that plugin in.
+    skipped_plugins = [] if plugins else plugin_runner.discover_plugins(root)
+    for result in (plugin_runner.run_plugins(root, inventory, graph) if plugins else []):
         timings[f'plugin:{result.name}'] = round(result.seconds, 3)
         if result.error:
             failed_checks.append(f'plugin:{result.name} ({result.error})')
         else:
+            ran.add(f'plugin:{result.name}')
             for finding in result.findings:
                 finding['check'] = f'plugin:{result.name}'
                 finding['tier'] = 'heuristic'
@@ -128,7 +137,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
     # A moved file changes every id that names it, so its decisions stop
     # matching. Listing them is what turns a silent reappearance into a row
     # the user can re-record.
-    stale = stale_decisions(decisions, live_ids)
+    stale = stale_decisions(decisions, live_ids, ran)
 
     kept.sort(key=lambda f: (SEVERITY_RANK[f['severity']],
                              f['category'],
@@ -142,6 +151,7 @@ def run_scan(repo_root: str, *, ignore: list[str] | None = None,
             'stale_decisions': stale,
             'counts': counts, 'failed_checks': failed_checks,
             'profile': config['profile'], 'gate': gated_checks(config),
+            'plugins_skipped': len(skipped_plugins),
             'file_count': len(inventory['files']),
             'edge_count': len(graph['edges']),
             'timings': timings}
@@ -220,9 +230,14 @@ def gates(finding: dict, gate: list[str] | set[str] = ()) -> bool:
     """Whether a finding can fail `--fail-on`.
 
     Proven findings can, and heuristic ones only when `[gate]` in the config
-    names their check. Judged findings never carry a tier, so never can.
+    names their check. A plugin's findings can when `[plugins.<name>]` sets
+    `gate = true`, which puts `plugin:<name>` in `gate`. Judged findings never
+    carry a tier, so never can.
     """
-    if not (finding['source'] == 'graph' or finding['source'].startswith('check:')):
+    source = finding['source']
+    if source.startswith('plugin:'):
+        return finding.get('check') in gate
+    if not (source == 'graph' or source.startswith('check:')):
         return False
     return finding.get('tier') == 'proven' or finding.get('check') in gate
 
@@ -291,6 +306,9 @@ def _summary_markdown(result: dict) -> str:
         f" · {result['suppressed']} suppressed by prior decisions",
         '',
     ]
+    if result.get('plugins_skipped'):
+        lines += [f"{result['plugins_skipped']} plugin(s) in `.dovetail/checks/` were "
+                  'skipped (`--no-plugins`), so their rules were not checked.', '']
     stale = result.get('stale_decisions') or []
     if stale:
         lines += [f'{len(stale)} decision(s) in `.dovetail/decisions.jsonl` match no '
@@ -325,13 +343,17 @@ def build_parser() -> argparse.ArgumentParser:
                              'severity; heuristic checks count only when [gate] names them')
     parser.add_argument('--ignore', action='append', metavar='GLOB', default=[],
                         help='glob to exclude; repeatable')
+    parser.add_argument('--no-plugins', dest='plugins', action='store_false',
+                        help='do not run .dovetail/checks/*.py, which is code from the '
+                             'scanned repository')
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        result = run_scan(args.repo, ignore=args.ignore, since=args.since)
+        result = run_scan(args.repo, ignore=args.ignore, since=args.since,
+                          plugins=args.plugins)
     except ConfigError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2

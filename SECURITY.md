@@ -39,8 +39,12 @@ issue up to date.
 
 - **`.dovetail/checks/*.py` in the scanned repository runs on every scan.**
   These are repo-local checks. dovetail imports them and runs them as Python,
-  with your permissions. So scanning a repository runs code from it. Read a
-  repository's `.dovetail/checks/` before you scan it, unless you trust it.
+  with your permissions. So scanning a repository runs code from it,
+  including code from a pull request's branch: the per-PR CI template scans
+  the pull request's checkout, so a pull request can add or change a plugin
+  and have it run in CI. Read a repository's `.dovetail/checks/` before you
+  scan it, unless you trust it. Or pass `--no-plugins` to `scan.py` or to
+  `dovetail.py scan`, which skips them and says so in its output.
 - `git`, read-only: `rev-parse`, `ls-files`, `log`, `diff`, `blame` and `show`.
 - Other Python interpreters on your `PATH`, when `python3` is older than 3.11.
   Each is run once to read its version, and dovetail then re-runs itself under
