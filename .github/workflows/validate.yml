@@ -11,28 +11,18 @@ permissions:
   contents: read
 
 jobs:
+  # THE ESTATE FLOOR, defined once in dbhq-uk/.github (dbhq-uk/.github#4):
+  # SKILL.md frontmatter parses as YAML and names its directory, plugin.json
+  # parses and carries no version, skill paths are braced, every shell script
+  # passes bash -n and shellcheck, ruff E9,F, and no em or en dashes. Pinned
+  # by SHA; Dependabot moves the pin.
+  floor:
+    uses: dbhq-uk/.github/.github/workflows/skill-floor.yml@af131df509f44eb9abfe8b37ad6299c11f496c5f
+
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # No `version` in plugin.json, on purpose (24 Sep 2026). Claude Code only
-      # updates an installed plugin when this field changes, it was never bumped,
-      # and marketplace installs sat on old code for weeks. With no version the
-      # commit is the version, so every merge to main reaches users.
-      - name: plugin.json carries no version
-        run: jq -e 'has("version") | not' .claude-plugin/plugin.json > /dev/null
-
-      - name: Validate plugin manifest is valid JSON
-        run: jq empty .claude-plugin/plugin.json
-
-      - name: Check shell scripts parse
-        run: |
-          fail=0
-          while IFS= read -r s; do
-            bash -n "$s" || { echo "Syntax error: $s"; fail=1; }
-          done < <({ find . -maxdepth 1 -name '*.sh'; find skills -name '*.sh'; })
-          exit $fail
 
       - name: The CI templates users copy are valid YAML
         # These are shipped for people to paste into their own repositories. A
@@ -42,34 +32,6 @@ jobs:
           for f in skills/dovetail/ci/*.yml; do
             python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1])); print(sys.argv[1], 'OK')" "$f"
           done
-
-      - name: Check SKILL.md frontmatter
-        run: |
-          python3 - <<'PY'
-          import sys, pathlib, re
-          ok = True
-          for skill in sorted(pathlib.Path("skills").glob("*/SKILL.md")):
-              text = skill.read_text(encoding="utf-8")
-              m = re.match(r"^---\n(.*?)\n---", text, re.S)
-              if not m:
-                  print(f"{skill}: missing YAML frontmatter"); ok = False; continue
-              fm = m.group(1)
-              name = re.search(r"^name:\s*(.+)$", fm, re.M)
-              desc = re.search(r"^description:\s*(.+)$", fm, re.M)
-              if not name:
-                  print(f"{skill}: missing 'name'"); ok = False
-              else:
-                  name = name.group(1).strip()
-                  if name != skill.parent.name:
-                      print(f"{skill}: name '{name}' != directory '{skill.parent.name}'"); ok = False
-                  if not re.fullmatch(r"[a-z0-9-]{1,64}", name):
-                      print(f"{skill}: name must be lowercase alphanumeric/hyphen, <=64 chars"); ok = False
-              if not desc:
-                  print(f"{skill}: missing 'description'"); ok = False
-              elif len(desc.group(1).strip()) > 1024:
-                  print(f"{skill}: description exceeds 1024 chars"); ok = False
-          sys.exit(0 if ok else 1)
-          PY
 
       # Constraint 1 (see AGENTS.md): the exact layer is deterministic. A
       # third-party import would mean packages to install, which breaks the
