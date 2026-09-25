@@ -55,7 +55,7 @@ gates).
 
 Break any of these and it stops being the thing people can trust:
 
-1. **The exact layer is deterministic.** No model calls, no network, no third-party imports. An exact finding must follow from the structure of the repository. A check whose findings intent can explain (an orphan may be an entry point) is **heuristic**: its findings carry `tier: heuristic` and do not fail `--fail-on` unless `[gate]` in the config opts it in. Only **proven** findings gate by default. This is what makes the gate safe - a checker with false positives gets switched off within a week. The list lives in `HEURISTIC_CHECKS` in `config.py`. The judgement layer does call models, and is kept apart: its findings are labelled judged, and never gate a build in either CI job.
+1. **The exact layer is deterministic.** No model calls, no network, no third-party imports. An exact finding must follow from the structure of the repository. A check whose findings intent can explain (an orphan may be an entry point) is **heuristic**: its findings carry `tier: heuristic` and do not fail `--fail-on` unless `[gate]` in the config opts it in. Only **proven** findings gate by default. This is what makes the gate safe - a checker with false positives gets switched off within a week. The list lives in `HEURISTIC_CHECKS` in `config.py`. The judgement layer does call models, and is kept apart: its findings are labelled judged, and never gate a build in either CI job. The one network step is `--external-links`, which a user asks for per run: it runs lychee, its findings are heuristic, and nothing can make them gate.
 2. **The scan never writes to the scanned repository.** Only the triage loop writes, one approved fix at a time. The scan reads `.dovetail/decisions.jsonl` and never writes it; the only file it writes anywhere is `$GITHUB_STEP_SUMMARY`, and only when CI sets it. `store.append_decision` is called only from `dovetail.py decide`, on the user's say-so during triage, and CI fails if anything on the scan path calls it.
 3. **Fail loudly, never silently pass.** `--since` against an unresolvable ref exits `2`. A check that reports success because it could not run is worse than no check.
 4. **Never hand a reviewer more than it can finish.** Work is sharded into batches of 20 files. A reviewer given the whole repository and one turn budget reads a handful of files and skips the rest in silence - which is indistinguishable from thoroughness in the output. This was measured: unsharded, a 474-file repo produced 24 judged findings; sharded, 149.
@@ -73,7 +73,7 @@ Break any of these and it stops being the thing people can trust:
 ## Validating a change
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v     # 657 tests
+python3 -m pytest skills/dovetail/tests/ -v     # 667 tests
 python3 skills/dovetail/scripts/scan.py . --format json   # dogfood: scan this repo
 claude plugin validate .
 ```

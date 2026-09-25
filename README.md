@@ -129,7 +129,7 @@ job uses:
 
 ```
 $ python3 skills/dovetail/scripts/scan.py . --format github
-::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 19 times since. Check whether the recent changes to one should have been mirrored in the other.
+::warning file=AGENTS.md,line=1,title=decoupled::AGENTS.md and skills/dovetail/tests/test_reviewer.py changed together in 5 of their last commits (83%25 coupling), but have changed apart 20 times since. Check whether the recent changes to one should have been mirrored in the other.
 ```
 
 `--format github` prints one GitHub workflow annotation per finding (`%25` is how an annotation
@@ -174,6 +174,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 | `--fail-on none\|low\|medium\|high` | Exit non-zero when a proven finding at or above this severity exists |
 | `--ignore <glob>` | Exclude a glob; repeatable |
 | `--no-plugins` | Skip `.dovetail/checks/*.py`, which is code from the scanned repository |
+| `--external-links` | Also check external URLs, through [lychee](https://lychee.cli.rs) if it is installed. Uses the network, and never gates |
 
 The whole tutorial is [docs/getting-started.md](docs/getting-started.md).
 
@@ -210,7 +211,7 @@ works](docs/architecture.md) plus the [design notes](docs/design-notes.md) to un
 ## Tests
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -v      # 657 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -v      # 667 tests, no model calls, no network
 ```
 
 Hacking on it, or running from source with live edits: [docs/dev-setup.md](docs/dev-setup.md),

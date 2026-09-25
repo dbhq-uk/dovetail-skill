@@ -8,6 +8,7 @@ see the [guides](README.md#doing).
 ```
 scan.py <repo-path> [--format json|github] [--since REF]
                     [--fail-on none|low|medium|high] [--ignore GLOB ...] [--no-plugins]
+                    [--external-links]
 ```
 
 Read-only. It never modifies the repository it is scanning, and the only file it writes
@@ -20,6 +21,7 @@ anywhere is the GitHub step summary, and only when CI provides `$GITHUB_STEP_SUM
 | `--fail-on none\|low\|medium\|high` | `none` | Exit non-zero when a proven finding at or above this severity exists. Heuristic findings count only for checks `[gate]` names |
 | `--ignore GLOB` | none | Exclude a glob. Repeatable, and combines with `ignore` in the config |
 | `--no-plugins` | off | Do not run `.dovetail/checks/*.py`, which is code from the scanned repository. The result counts the plugins it skipped in `plugins_skipped` |
+| `--external-links` | off | Also check external `http` and `https` URLs in markdown, by running [lychee](https://lychee.cli.rs), which must be on `PATH`. The one step that uses the network. See [external URLs](#external-urls) |
 
 Run it directly, or ask for it in a session:
 
@@ -33,7 +35,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py /path/to/repo --format json
 |---|---|
 | `0` | No finding met the threshold, and no check failed |
 | `1` | A qualifying finding exists, or a check raised while `--fail-on` was not `none` |
-| `2` | The scan could not run: `git` is not installed, not a git repository, an invalid `.dovetail/config.toml`, or a `--since` ref that does not resolve |
+| `2` | The scan could not run: `git` is not installed, not a git repository, an invalid `.dovetail/config.toml`, a `--since` ref that does not resolve, or `--external-links` without lychee on `PATH` |
 
 Exit `2` is deliberately loud. On a shallow clone `--since` cannot resolve its base ref, and a
 check that reports success because it could not run is worse than no check at all.
@@ -149,7 +151,7 @@ dovetail.py <verb> [--repo PATH] ...
 
 | Verb | What it does | Prints |
 |---|---|---|
-| `scan [--since REF] [--ignore GLOB] [--no-plugins]` | Runs the scan, starts a new run, snapshots every file | A summary of about eight lines |
+| `scan [--since REF] [--ignore GLOB] [--no-plugins] [--external-links]` | Runs the scan, starts a new run, snapshots every file. `rescan` repeats the same options | A summary of about eight lines |
 | `next [--json]` | The next finding in queue order | The finding as markdown, then its id, box header, options, whether one may be recommended, whether the scan computed a fix, and whether it is `batch_eligible` |
 | `next --batch` | The queued `batch_eligible` findings in the next finding's category, 20 at most | Their combined diff, the box, and one `decide` line for all of them |
 | `decide ID... skip` | Defers the findings for this run | One line |
@@ -317,6 +319,20 @@ its file moving. A row that matches no current finding is listed in `stale_decis
 also writes `layer` (`exact` or `judged`); a `judged` row is never reported stale, because a
 scan cannot re-derive a reviewer's finding.
 
+## External URLs
+
+By default no URL is checked: links to `http`, `https` and other schemes are skipped, and only
+links inside the repository are resolved. `--external-links` adds one check, `external_links`,
+that runs `lychee --format json --include-fragments` over every markdown file and reads its
+report. Each URL lychee could not reach is a `broken_link` finding from `check:external`: a
+failed request is `medium`, and a missing anchor or a timeout is `low`.
+
+These findings are heuristic and never gate, and `[gate]` cannot opt them in. A URL that fails
+today may answer tomorrow, and a site that refuses automated requests is not drift in the
+repository. If lychee is not on `PATH` the scan exits `2`. If it runs and fails, `external_links`
+is named in `failed_checks`, which fails `--fail-on` like any failed check. lychee reads a
+`lychee.toml` in the repository root on its own, so excludes and accepted status codes go there.
+
 ## .dovetail/checks/*.py
 
 Repo-local checks. A module exposing `check(inventory, graph)` and returning a list of
@@ -347,7 +363,7 @@ profile is passed, so the one in `.dovetail/config.toml` applies.
 
 Python 3.11 or newer, and `git`. No third-party packages, no virtualenv, no lockfile, no API
 key and no network for the deterministic layer. The judgement layer needs a model; everything
-else runs without one.
+else runs without one. `--external-links` needs [lychee](https://lychee.cli.rs) and the network.
 
 The floor applies to whichever interpreter runs dovetail, which need not be the one `python3`
 names. If `python3` is older than 3.11, dovetail re-execs under the newest suitable interpreter
@@ -355,5 +371,5 @@ on `PATH` - so 3.10 as `python3` with 3.12 installed alongside works, and nothin
 has to change. If there is no such interpreter, it exits `2` and names the fix.
 
 ```bash
-python3 -m pytest skills/dovetail/tests/ -q      # 657 tests, no model calls, no network
+python3 -m pytest skills/dovetail/tests/ -q      # 667 tests, no model calls, no network
 ```

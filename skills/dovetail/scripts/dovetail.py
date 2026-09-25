@@ -409,7 +409,8 @@ def _summary_lines(root: str, result: dict) -> list[str]:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     root = os.path.realpath(args.repo)
-    result = run_scan(root, ignore=args.ignore, since=args.since, plugins=args.plugins)
+    result = run_scan(root, ignore=args.ignore, since=args.since, plugins=args.plugins,
+                      external_links=args.external_links)
     directory = _ensure_run_dir(root)
     # A new run starts clean: shards from an old one would import stale work.
     shutil.rmtree(os.path.join(directory, 'review'), ignore_errors=True)
@@ -418,7 +419,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         'repo': root,
         'started': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
         'options': {'since': args.since, 'ignore': list(args.ignore),
-                    'plugins': args.plugins},
+                    'plugins': args.plugins, 'external_links': args.external_links},
         'summary': {key: result[key] for key in
                     ('file_count', 'edge_count', 'suppressed', 'failed_checks', 'profile')},
         'entries': {f['id']: _entry(f) for f in result['findings']},
@@ -599,7 +600,8 @@ def cmd_rescan(args: argparse.Namespace) -> int:
     state = load_state(root)
     options = state['options']
     result = run_scan(root, ignore=options['ignore'], since=options['since'],
-                      plugins=options.get('plugins', True))
+                      plugins=options.get('plugins', True),
+                      external_links=options.get('external_links', False))
     now = {f['id']: f for f in result['findings']}
     entries = state['entries']
 
@@ -902,6 +904,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument('--ignore', action='append', metavar='GLOB', default=[])
     p.add_argument('--no-plugins', dest='plugins', action='store_false',
                    help='do not run .dovetail/checks/*.py, which is code from the repository')
+    p.add_argument('--external-links', action='store_true',
+                   help='also check external URLs with lychee; uses the network, '
+                        'and rescan checks them again')
     p.set_defaults(run=cmd_scan)
 
     p = sub.add_parser('next', parents=[common], help='show the next finding')
