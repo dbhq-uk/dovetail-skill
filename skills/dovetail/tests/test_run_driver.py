@@ -34,8 +34,6 @@ sys.path.insert(0, SCRIPTS)
 
 import ci_dispatch  # noqa: E402
 import dovetail  # noqa: E402
-from discover import discover  # noqa: E402
-from refgraph import build_graph  # noqa: E402
 
 GIT_ENV = {'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@e',
            'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@e'}
