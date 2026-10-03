@@ -1,6 +1,6 @@
 ---
 name: dovetail
-description: Check whether a repository agrees with itself, then work through the findings one at a time. Finds broken internal links, dangling heading anchors, orphaned files, duplicate content, translations that have fallen behind, drift between docs and code, contradictions between documents, and conventions the repo states but does not follow. Not for code review or security audits, and it checks external URLs only when asked. Trigger on phrases like "dovetail", "does this repo agree with itself", "find contradictions in the docs", "repo coherence", "docs drift", "check the docs for broken links".
+description: Check whether a repository agrees with itself, then work through the findings one at a time. Finds broken internal links, dangling heading anchors, orphaned files, duplicate content, translations that have fallen behind, drift between docs and code, contradictions between documents, and conventions the repo states but does not follow. Not for code review or security audits, and it checks external URLs only when asked. Use when the user asks whether a repo's docs agree with each other or with the code, wants broken links or docs drift found, or says "dovetail".
 ---
 
 # dovetail
@@ -140,8 +140,6 @@ For an exact finding the options are the actions. When `next` says the scan comp
 header    contradictn
 question  The code says 30. Which is right?
 options   config.md is stale (Recommended)
-                                README.md and src/client.py:31 both say 30, and
-                                config.md:24 is the older of the two documents.
                                 Change it to 30s, plus the 2 docs that cite it.
           The code is wrong     60s is intended. Change src/client.py:31.
           Both are correct      Different timeouts, badly named. Record why.
